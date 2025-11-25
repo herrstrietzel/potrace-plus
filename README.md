@@ -1,14 +1,11 @@
-Notice:
+# potrace-plus
 
-No longer maintained. (Never been maintained before.)
+A javascript port of [Potrace](http://potrace.sourceforge.net).  
+Based on [kilobtye's JS port](https://github.com/kilobtye/potrace)
 
-Licensed under GPL. (You know it...)
 
-Ditsributed  without any waranty. 
+## Features
+* SVG optimization for smaller file sizes
+* convenient API normalizing all kind of inputs
 
-potrace
-=======
-
-A javascript port of [Potrace](http://potrace.sourceforge.net)
-
-[online demo](http://kilobtye.github.io/potrace/)
+... to be continued

@@ -1,0 +1,40 @@
+{
+  "name": "potrace-plus",
+  "version": "0.1.0",
+  "description": "",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/herrstrietzel/potrace-plus.git"
+  },
+  "keywords": [],
+  "author": "herrstrietzel",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/herrstrietzel/potrace-plus/issues"
+  },
+  "homepage": "https://github.com/herrstrietzel/potrace-plus#readme",
+  "main": "./dist/potrace-plus.js",
+  "module": "./dist/potrace-plus.esm.js",
+  "browser": "./dist/potrace-plus.js",
+  "exports": {
+    ".": {
+      "import": "./dist/potrace-plus.esm.js"
+    },
+    "./dist/potrace-plus.esm.js": "./dist/potrace-plus.esm.js",
+    "./dist/potrace-plus.js": "./dist/potrace-plus.js",
+    "./dist/potrace-plus.min.js": "./dist/potrace-plus.min.js"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "rollup -c",
+    "watch": "rollup -c --watch",
+    "test": "node test.js"
+  },
+  "devDependencies": {
+    "@rollup/plugin-terser": "^0.4.4",
+    "rollup": "^3.29.5"
+  },
+  "dependencies": {
+    "terser": "^5.39.0"
+  }
+}

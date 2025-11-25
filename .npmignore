@@ -1,0 +1,8 @@
+__backup
+__log
+__todo
+__testfiles
+demo/
+rollup.config.js
+node_modules/
+gitnore/

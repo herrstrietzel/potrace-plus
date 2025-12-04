@@ -54,6 +54,21 @@ The potrace object contains all relevant data:
 * width and height
 * command count
 
+You can also use these methods 
+
+```js  
+
+// Get the SVG markup for compound or split paths
+traced.getSVG(split=false)
+
+// Get stringified path data - as `d` attribute
+traced.getD()
+
+// Get path data array
+traced.getPathData()
+traced.getPathDataNorm()
+```
+
 
 ## Options
 

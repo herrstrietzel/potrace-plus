@@ -114,6 +114,8 @@ let traced = await PotracePlus(imgPreview, options);
 ```
 
 ### Demo
-Check the (webapp)[https://herrstrietzel.github.io/potrace-plus] to test different settings – or just to vectorize images.
+Check the [webapp](https://herrstrietzel.github.io/potrace-plus) to test different settings – or just to vectorize images.  
+
+This demo app also provides a simple **PDF** download option – powered by [pdfkit](https://github.com/foliojs/pdfkit)
 
 ... to be continued

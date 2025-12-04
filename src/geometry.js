@@ -17,6 +17,41 @@ export function getAngle(p1, p2, normalize = false) {
     return angle
 }
 
+/** Get relationship between a point and a polygon using ray-casting algorithm
+* based on timepp's answer
+* https://stackoverflow.com/questions/217578/how-can-i-determine-whether-a-2d-point-is-within-a-polygon#63436180
+*/
+
+export function isPointInPolygon(pt, polygon, bb, skipBB = false) {
+    const between = (p, a, b) => (p >= a && p <= b) || (p <= a && p >= b);
+    let inside = false;
+
+    // not in bbox - quit || no bbox defined
+    if (!skipBB || !bb.bottom) {
+        if (bb.left > pt.x || bb.top > pt.y || bb.bottom < pt.y || bb.right < pt.x) {
+            return false;
+        }
+    }
+
+    for (let i = polygon.length - 1, j = 0; j < polygon.length; i = j, j++) {
+        const A = polygon[i];
+        const B = polygon[j];
+        // corner cases
+        if ((pt.x == A.x && pt.y == A.y) || (pt.x == B.x && pt.y == B.y))
+            return true;
+        if (A.y == B.y && pt.y == A.y && between(pt.x, A.x, B.x)) return true;
+        if (between(pt.y, A.y, B.y)) {
+            // if pt inside the vertical range
+            // filter out "ray pass vertex" problem by treating the line a little lower
+            if ((pt.y == A.y && B.y >= A.y) || (pt.y == B.y && A.y >= B.y)) continue;
+            // calc cross product `ptA X ptB`, pt lays on left side of AB if c > 0
+            const c = (A.x - pt.x) * (B.y - pt.y) - (B.x - pt.x) * (A.y - pt.y);
+            if (c == 0) return true;
+            if (A.y < B.y == c > 0) inside = !inside;
+        }
+    }
+    return inside ? true : false;
+}
 
 /**
  * based on:  Justin C. Round's 
@@ -417,14 +452,14 @@ export function svgArcToCenterParam(x1, y1, rx, ry, xAxisRotation, largeArc, swe
 
 
 export function rotatePoint(pt, cx, cy, rotation = 0, convertToRadians = false) {
-  if (!rotation) return pt;
+    if (!rotation) return pt;
 
-  rotation = convertToRadians ? (rotation / 180) * Math.PI : rotation;
-  
-  return {
-    x: cx + (pt.x - cx) * Math.cos(rotation) - (pt.y - cy) * Math.sin(rotation),
-    y: cy + (pt.x - cx) * Math.sin(rotation) + (pt.y - cy) * Math.cos(rotation)
-  };
+    rotation = convertToRadians ? (rotation / 180) * Math.PI : rotation;
+
+    return {
+        x: cx + (pt.x - cx) * Math.cos(rotation) - (pt.y - cy) * Math.sin(rotation),
+        y: cy + (pt.x - cx) * Math.sin(rotation) + (pt.y - cy) * Math.cos(rotation)
+    };
 }
 
 
@@ -454,7 +489,7 @@ export function reducepts(pts, max = 48) {
 
 export function sortPolygonLeftTopFirst(pts) {
     if (pts.length === 0) return pts.slice();
-    
+
     let firstIndex = 0;
     for (let i = 1; i < pts.length; i++) {
         const current = pts[i];
@@ -463,7 +498,7 @@ export function sortPolygonLeftTopFirst(pts) {
             firstIndex = i;
         }
     }
-    
+
     return pts.slice(firstIndex).concat(pts.slice(0, firstIndex));
 }
 
@@ -923,7 +958,7 @@ export function commandIsFlat0(points, tolerance = 0.025) {
 export function commandIsFlat(points, tolerance = 0.025) {
 
     let p0 = points[0];
-    let p = points[points.length-1];
+    let p = points[points.length - 1];
 
     let xArr = points.map(pt => { return pt.x })
     let yArr = points.map(pt => { return pt.y })
@@ -942,8 +977,8 @@ export function commandIsFlat(points, tolerance = 0.025) {
 
     let squareDist = getSquareDistance(p0, p)
     let squareDist1 = getSquareDistance(p0, points[0])
-    let squareDist2 = points.length>3 ? getSquareDistance(p, points[1]) : squareDist1;
-    let squareDistAvg = (squareDist1+squareDist2)/2
+    let squareDist2 = points.length > 3 ? getSquareDistance(p, points[1]) : squareDist1;
+    let squareDistAvg = (squareDist1 + squareDist2) / 2
 
     tolerance = 0.5;
     let thresh = (w + h) * 0.5 * tolerance;
@@ -953,7 +988,7 @@ export function commandIsFlat(points, tolerance = 0.025) {
     //console.log('w,h', w, h, thresh);
 
     let area = 0;
-    for (let i = 0,l=points.length; i < l; i++) {
+    for (let i = 0, l = points.length; i < l; i++) {
         let addX = points[i].x;
         let addY = points[i === points.length - 1 ? 0 : i + 1].y;
         let subX = points[i === points.length - 1 ? 0 : i + 1].x;
@@ -975,10 +1010,10 @@ export function commandIsFlat(points, tolerance = 0.025) {
     //let isFlat = area === 0 ? true : (ratio < 0.15 ? true : false);
     //let isFlat = area === 0 ? true : (area < squareDist/areaThresh ? true : false);
 
-    let isFlat = area=== 0 ? true : area < squareDistAvg/areaThresh;
-    
+    let isFlat = area === 0 ? true : area < squareDistAvg / areaThresh;
 
-    return { area: area, flat: isFlat, thresh: thresh, ratio: ratio, squareDist:squareDist, areaThresh:squareDist/areaThresh  };
+
+    return { area: area, flat: isFlat, thresh: thresh, ratio: ratio, squareDist: squareDist, areaThresh: squareDist / areaThresh };
 }
 
 

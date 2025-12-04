@@ -109,6 +109,8 @@ export function potraceGetPathList(bmp, {
                     diry = -tmp;
                 }
             }
+
+            //console.log('turnpolicy', turnpolicy);
             return path;
         }
 
@@ -131,6 +133,8 @@ export function potraceGetPathList(bmp, {
             }
         }
 
+
+
         while (currentPoint = findNext(currentPoint)) {
 
             path = findPath(currentPoint);
@@ -141,10 +145,12 @@ export function potraceGetPathList(bmp, {
             }
         }
 
+        return pathlist;
     }
 
 
     function processPath() {
+
         function Quad() {
             this.data = [0, 0, 0, 0, 0, 0, 0, 0, 0];
         }
@@ -230,6 +236,7 @@ export function potraceGetPathList(bmp, {
 
         function ddist(p, q) {
             return Math.sqrt((p.x - q.x) ** 2 + (p.y - q.y) ** 2);
+            //return (p.x - q.x) ** 2 + (p.y - q.y) ** 2;
         }
 
         function bezier(t, p0, p1, p2, p3) {
@@ -505,6 +512,7 @@ export function potraceGetPathList(bmp, {
                 i = prev[i];
                 path.po[j] = i;
             }
+            //console.log('path.po', path);
         }
 
         function adjustVertices(path) {
@@ -760,6 +768,7 @@ export function potraceGetPathList(bmp, {
         }
 
         function optiCurve(path) {
+
             function Opti() {
                 this.pen = 0;
                 this.c = [{ x: 0, y: 0 }, { x: 0, y: 0 }];
@@ -809,7 +818,6 @@ export function potraceGetPathList(bmp, {
                 p1 = vertex[mod(i + 1, m)];
                 p2 = vertex[mod(j, m)];
                 p3 = curve.c[mod(j, m) * 3 + 2];
-
 
                 area = areac[j] - areac[i];
                 area -= getProd('dpara', vertex[0], curve.c[i * 3 + 2], curve.c[j * 3 + 2]) / 2;
@@ -1001,6 +1009,7 @@ export function potraceGetPathList(bmp, {
 
         for (let i = 0; i < pathlist.length; i++) {
             let path = pathlist[i];
+
             calcSums(path);
             calcLon(path);
             bestPolygon(path);

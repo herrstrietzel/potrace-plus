@@ -1,0 +1,130 @@
+.hgh-100vh {
+    height: 100vh
+}
+
+.input-wrap-file:focus,
+.input-wrap-file:focus-within {
+    box-shadow: none;
+}
+
+label:has(+.input-wrap-range) {
+    font-weight: 700;
+}
+
+.scroll-content {
+    height: 100%;
+    max-height: 100vh;
+    overflow-y: auto;
+}
+
+
+:root {
+    --color-bg: hsla(55, 10%, 96%, 1);
+}
+
+body {
+    background: var(--color-bg);
+}
+
+
+.imgPreview {
+    mix-blend-mode: darken;
+    filter: grayscale(1);
+}
+
+
+.sr-only {
+    clip-path: inset(100%);
+    height: 1px;
+    width: 1px;
+    overflow: hidden;
+    position: absolute;
+    white-space: nowrap;
+    margin: -1px;
+    left: 0;
+}
+
+
+@media (min-width: 900px) {
+    .grd-main {
+        grid-template-columns: 17.4em 17.25em 2fr !important;
+    }
+}
+
+@media (max-width: 400px) {
+    .grd-main {
+        grid-template-columns: 1fr;
+        grid-template-rows: 1fr 1fr 1fr;
+    }
+}
+
+
+
+/*
+.aside p {
+    margin: 0;
+    margin-bottom: 0.5rem;
+}
+*/
+
+
+
+.btn-download {
+    margin-right: 0.5rem;
+}
+
+.preview {
+
+    img,
+    svg {
+        overflow: visible;
+        outline: 1px solid #ccc;
+        max-width: 100%;
+        min-width: 100%;
+        max-height: 40vh;
+        height: auto;
+        object-fit: contain;
+
+    }
+
+}
+
+.showMarkers {
+    path {
+        marker-start: url(#markerStart);
+        marker-mid: url(#markerRound);
+        stroke-width: 0.5% !important;
+    }
+}
+
+
+
+canvas {
+    max-width: 100%;
+    outline: 1px solid #ccc
+}
+
+
+.inputSvg {
+    svg {
+        outline: 1px solid #ccc
+    }
+}
+
+
+
+.btn-download {
+    display: inline-flex;
+    padding: 0.5em;
+    line-height: 1em;
+    border-radius: 0.3rem;
+    align-items: center;
+
+    &:hover{
+        color:var(--color-bg);
+        --color-icon: #fff;
+        svg{
+            stroke:#fff;
+        }
+    }
+}

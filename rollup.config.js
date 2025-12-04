@@ -81,23 +81,5 @@ export default [
         ]
     },
 
-    // Node.js CJS Build
-    {
-        input: 'src/index.js',
-        output: [
-            {
-                file: `dist/${libName}.node.js`,
-                format: 'cjs',
-                exports: 'named',
-                plugins: [stripDevComments()]
-            },
-            {
-                file: `dist/${libName}.node.min.js`,
-                format: 'cjs',
-                exports: 'named',
-                plugins: [terser()]
-            }
-        ]
-    }
 ];
 

@@ -4,8 +4,8 @@ export {
 } from './constants';
 
 
-import { getBmp, svg2BmpData } from './bitmap';
-import { potraceGetPathList } from './main';
+import { getBmp, svg2Canvas } from './bitmap';
+import { potraceGetPathList } from './potrace_pathlist';
 import { getPotracePathData, getSVG } from './svg';
 
 
@@ -15,8 +15,8 @@ export function PotraceObj(data = {}) {
 
 
 
-PotraceObj.prototype.getSVG = function () {
-    return this.svg
+PotraceObj.prototype.getSVG = function (split=false) {
+    return !split ? this.svg : this.svgSplit;
 }
 
 PotraceObj.prototype.getPathData = function () {
@@ -28,7 +28,7 @@ PotraceObj.prototype.getD = function () {
 }
 
 
-export async function Potrace(input, {
+export async function PotracePlus(input, {
 
     // potrace
     turnpolicy = "majority",
@@ -42,7 +42,15 @@ export async function Potrace(input, {
     maxSize = 5000,
     scale = 1,
 
+    //filters
+    brightness = 1,
+    contrast = 1,
+    invert = 0,
+    blur=0,
+
     // svg processing
+    crop = true,
+
     addDimensions = true,
     toRelative = true,
     toShorthands = true,
@@ -58,14 +66,12 @@ export async function Potrace(input, {
      * file
      */
 
-    let bmpData = await getBmp(input, {minSize, maxSize, scale});
+    let bmpData = await getBmp(input, { minSize, maxSize, crop, scale, brightness, contrast, invert, blur });
 
 
     // get image properties
     let { bmp, scaleAdjust, width, height } = bmpData;
-
-
-    console.log(minSize, maxSize, bmpData);
+    //console.log(minSize, maxSize, bmpData);
 
 
     /**
@@ -84,27 +90,36 @@ export async function Potrace(input, {
     // scale back
     scale = 1 / scaleAdjust
 
-    console.log(toRelative, toShorthands, decimals);
 
     // get SVG data
     let pathData = getPotracePathData(pathList, scale)
+
+    if (!pathData.length) {
+        throw new Error("Couldn't trace image")
+        //return false;
+    }
+
     let pathDataNorm = JSON.parse(JSON.stringify(pathData))
     let data = getSVG(pathData, width, height, { addDimensions, toRelative, toShorthands, decimals });
-    data.pathData = pathData;
+    data.width = width;
+    data.height = height;
+    data.commands = pathData.length;
 
     data.scaleAdjust = scaleAdjust;
 
     // absolute pathData
     data.pathDataNorm = pathDataNorm;
 
-    console.log('!!!data', data, pathData);
-
+    //console.log('!!!data', data, pathData);
 
     // return object
     return new PotraceObj(data);
 
 }
 
+export { svg2Canvas as svg2Canvas };
+
 if (typeof window !== 'undefined') {
-    window.Potrace = Potrace;
+    window.PotracePlus = PotracePlus;
+    window.svg2Canvas = svg2Canvas;
 }

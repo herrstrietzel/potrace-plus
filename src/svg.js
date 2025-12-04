@@ -6,9 +6,13 @@
  * SVG path data array
  */
 
+import { getPathDataVertices, isPointInPolygon } from "./geometry";
+import { getPathArea, getPolygonArea } from "./geometry_area";
+import { checkBBoxIntersections, getPathDataBBox } from "./geometry_bbox";
 import { cleanUpPathData, optimizeStartingPoints } from "./pathdata_cleanup";
 import { convertPathData, pathDataToRelative } from "./pathData_convert";
 import { reorderPathData } from "./pathData_reorder";
+import { addExtremePoints, splitSubpaths } from "./pathData_split";
 
 export function getPotracePathData(pathList = [], scale = 1) {
 
@@ -83,14 +87,127 @@ export function getSVG(pathData, w, h, {
     w = Math.ceil(w);
     h = Math.ceil(h);
 
-    // simplify/cleanup
-    /*
-    let removeFinalLineto = false;
-    let startToTop = false;
-    pathData = optimizeStartingPoints(pathData, removeFinalLineto, startToTop);
-    pathData = cleanUpPathData(pathData);
-    */
 
+
+    /**
+     * decompose compound path
+     */
+    let pathDataCloned = JSON.parse(JSON.stringify(pathData))
+    //pathDataCloned = addExtremePoints(pathDataCloned);
+    let pathDataSorted = reorderPathData(pathDataCloned);
+    let pathDataArray = splitSubpaths(pathDataSorted);
+
+
+
+    /**
+     * analyze subpaths
+     * get bounding boxes 
+     * and poly approximation for 
+     * overlap checking
+     */
+
+    let subPathArr = []
+    let l = pathDataArray.length;
+
+    for (let i = 0; i < l; i++) {
+        let pathData = pathDataArray[i]
+
+        // add extreme points for better poly approximation
+        let pathDataExt = addExtremePoints(JSON.parse(JSON.stringify(pathData)))
+        let bb = getPathDataBBox(pathDataExt)
+        let poly = getPathDataVertices(pathDataExt)
+        subPathArr.push({ pathData, bb, poly, includes: [] })
+    }
+
+
+
+    /**
+     * check overlapping 
+     * sub paths
+     */
+    for (let i = 0, l = subPathArr.length; i < l; i++) {
+        let sub1 = subPathArr[i];
+        let { bb, poly } = sub1;
+
+        for (let j = 0; j < l; j++) {
+
+            let sub1 = subPathArr[j];
+            if (i === j) continue;
+
+            let [bb1, poly1] = [sub1.bb, sub1.poly];
+
+            // sloppy bbox intersection test
+            let intersects = checkBBoxIntersections(bb, bb1);
+            if (!intersects) continue;
+
+
+            // test sample on-path points
+            let ptM = { x: bb1.x + bb1.width * 0.5, y: bb1.y + bb1.height * 0.5 }
+            let pt2 = poly1[0]
+            let pt3 = poly1[Math.floor(poly1.length / 2)];
+            let pt4 = poly1[poly1.length - 1];
+
+            let pts = [ptM, pt2, pt3, pt4];
+            let inPoly = false;
+
+            for (let i = 0; i < pts.length; i++) {
+                let pt = pts[i];
+                if (isPointInPolygon(pt, poly, bb, true)) {
+                    inPoly = true;
+                    break
+                }
+            }
+
+            //inPoly
+            if (inPoly) {
+                subPathArr[i].includes.push(j)
+            }
+        }
+    }
+
+
+    /**
+     * combine overlapping 
+     * compound paths
+     */
+    for (let i = 0, l = subPathArr.length; i < l; i++) {
+        let sub = subPathArr[i];
+        let { includes } = sub;
+
+        includes.forEach(s => {
+            let sub1 = subPathArr[s].pathData
+            if (sub1.length) {
+                subPathArr[i].pathData.push(...sub1)
+                subPathArr[s].pathData = []
+            }
+        })
+    }
+
+    // remove empty els
+    subPathArr = subPathArr.filter(sub => sub.pathData.length)
+    //console.log('!!!subPathArr', subPathArr);
+
+    // Add explicit dimension attributes sometimes reasonable for graphic editors
+    let dimAtts = addDimensions ? `width="${w}" height="${h}" ` : '';
+
+    let svgSplit = `<svg viewBox="0 0 ${w} ${h}" ${dimAtts}xmlns="http://www.w3.org/2000/svg">`;
+    let dArr = []
+    subPathArr.forEach(sub => {
+        let { pathData } = sub;
+        //let pathData  = sub;
+        try {
+            if (toRelative || toShorthands || decimals != -1) pathData = convertPathData(pathData, { toRelative, toShorthands, decimals });
+            let d = pathDataToD(pathData, decimals)
+            //console.log(d);
+            dArr.push(d)
+            svgSplit += `<path d="${d}"/>`
+
+        } catch {
+            console.log('catch', pathData);
+        }
+    })
+
+    svgSplit += '</svg>';
 
 
     /**
@@ -104,12 +221,9 @@ export function getSVG(pathData, w, h, {
 
     let d = pathDataToD(pathData, decimals)
 
-    // Add explicit dimension attributes sometimes reasonable for graphic editors
-    let dimAtts = addDimensions ? `width="${w}" height="${h}" ` : '';
-
     let svg = `<svg viewBox="0 0 ${w} ${h}" ${dimAtts}xmlns="http://www.w3.org/2000/svg"><path d="${d}"/></svg>`;
 
-    return { svg, d }
+    return { svg, d, svgSplit, dArr, pathData }
 
 }
 

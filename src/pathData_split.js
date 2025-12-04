@@ -279,7 +279,7 @@ export function addExtemesToCommand(p0, values) {
             pathDataNew.push(...commandsSplit)
             extremeCount += commandsSplit.length;
         }else{
-            console.log('no extreme: ', tArr);
+            //console.log('no extreme: ', tArr);
             pathDataNew.push({ type: type, values: values })
         }
 
@@ -317,7 +317,13 @@ export function addExtremePoints(pathData) {
         else {
             // add extremes
             if (type === 'C' || type === 'Q') {
-                pathDataNew.push(...addExtemesToCommand(p0, values))
+                let comExt = addExtemesToCommand(p0, values).pathData;
+                //console.log('comExt', comExt);
+                if(comExt.length) {
+                    pathDataNew.push(... comExt )
+                }else{
+                    pathDataNew.push(com )
+                }
             }
         }
 

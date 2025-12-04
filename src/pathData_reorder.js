@@ -115,7 +115,7 @@ export function addClosePathLineto(pathData) {
 
 export function reorderPathData(pathData, sortBy = ["x", "y"]) {
 
-    console.log('reorderPathData');
+   // console.log('reorderPathData');
 
 
     const fieldSorter = (fields) => {
@@ -172,6 +172,6 @@ export function reorderPathData(pathData, sortBy = ["x", "y"]) {
         pathDataSorted.push(...pathDataArr[index]);
     });
 
-    console.log('subPathsSorted', pathDataSorted);
+    //console.log('subPathsSorted', pathDataSorted);
     return pathDataSorted;
 }

@@ -17,10 +17,10 @@ Based on [kilobtye's JS port](https://github.com/kilobtye/potrace)
 
 ## Usage
 
-Load script
+Load script locally or via cdn
 
-```js
-<script src="dist/potrace-plus.min.js" defer></script>
+```html
+<script src="https://cdn.jsdelivr.net/npm/potrace-plus@latest/dist/potrace-plus.min.js"></script>
 ```
 
 Call potrace in asynchronous function.
@@ -34,6 +34,18 @@ Call potrace in asynchronous function.
 
 })();
 ```
+
+#### ESM 
+
+```js
+
+import {PotracePlus} from './dist/potrace-plus.esm.min.js
+
+(async()=>{
+    let traced = await PotracePlus(imgPreview);
+})();
+```
+
 
 The potrace object contains all relevant data:
 * SVG markup for self-contained file – split and single compound path

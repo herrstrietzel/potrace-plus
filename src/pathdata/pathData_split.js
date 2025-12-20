@@ -1,5 +1,5 @@
-import { pointAtT, svgArcToCenterParam, getBezierExtremeT  } from "./geometry";
-import { renderPoint, renderPath } from "./visualize";
+import { pointAtT, svgArcToCenterParam, getBezierExtremeT } from "../geometry";
+import { renderPoint, renderPath } from "../visualize";
 
 
 /**
@@ -85,7 +85,7 @@ export function getPathDataPlusChunks(pathDataPlus = [], debug = false) {
             //console.log('show chunks', pathDataChunks);
             pathDataChunks.forEach((ch, i) => {
                 let stroke = i % 2 === 0 ? 'green' : 'orange';
-                if(i===pathDataChunks.length-2){
+                if (i === pathDataChunks.length - 2) {
                     stroke = 'magenta'
                 }
 
@@ -129,11 +129,11 @@ export function splitSubpaths(pathData) {
     let subPathArr = [];
 
     //split segments after M command
-    
-    try{
+
+    try {
         let subPathIndices = pathData.map((com, i) => (com.type.toLowerCase() === 'm' ? i : -1)).filter(i => i !== -1);
 
-    }catch{
+    } catch {
         console.log('catch', pathData);
     }
 
@@ -167,7 +167,7 @@ export function splitCommand(points, t) {
     let cp1 = points[1];
     let cp2 = points[points.length - 2];
     let p = points[points.length - 1];
-    let m0,m1,m2,m3,m4, p2
+    let m0, m1, m2, m3, m4, p2
 
 
     // cubic
@@ -242,7 +242,7 @@ export function splitCommand(points, t) {
  * calculate command extremes
  */
 
-export function addExtemesToCommand(p0, values) {
+export function addExtemesToCommand(p0, values, verbose = false) {
 
     let pathDataNew = [];
 
@@ -259,6 +259,7 @@ export function addExtemesToCommand(p0, values) {
     let yMin = Math.min(p.y, p0.y)
 
     let extremeCount = 0;
+    let tArr = []
 
     //has  extreme - split
     if (
@@ -273,12 +274,16 @@ export function addExtemesToCommand(p0, values) {
 
     ) {
         let pts = type === 'C' ? [p0, cp1, cp2, p] : [p0, cp1, p];
-        let tArr = getBezierExtremeT(pts).sort();
-        if(tArr.length){
+        tArr = getBezierExtremeT(pts).sort();
+
+        // avoid small t values
+        tArr = tArr.filter(t=>t>0.05 && t<0.95)
+
+        if (tArr.length) {
             let commandsSplit = splitCommandAtTValues(p0, values, tArr)
             pathDataNew.push(...commandsSplit)
             extremeCount += commandsSplit.length;
-        }else{
+        } else {
             //console.log('no extreme: ', tArr);
             pathDataNew.push({ type: type, values: values })
         }
@@ -289,14 +294,15 @@ export function addExtemesToCommand(p0, values) {
         pathDataNew.push({ type: type, values: values })
     }
 
-    return { pathData: pathDataNew, count: extremeCount };
+    return { pathData: pathDataNew, count: extremeCount, tArr };
 
 }
 
 
 
-export function addExtremePoints(pathData) {
+export function addExtremePoints(pathData, verbose = false) {
     let pathDataNew = [pathData[0]];
+
     // previous on path point
     let p0 = { x: pathData[0].values[0], y: pathData[0].values[1] };
     let M = { x: pathData[0].values[0], y: pathData[0].values[1] };
@@ -304,6 +310,7 @@ export function addExtremePoints(pathData) {
 
     for (let c = 1; len && c < len; c++) {
         let com = pathData[c];
+        //com.t=0;
         //let comPrev = pathData[c - 1];
         //let comN = pathData[c + 1] ? pathData[c + 1] : '';
         let { type, values } = com;
@@ -317,13 +324,35 @@ export function addExtremePoints(pathData) {
         else {
             // add extremes
             if (type === 'C' || type === 'Q') {
-                let comExt = addExtemesToCommand(p0, values).pathData;
-                //console.log('comExt', comExt);
-                if(comExt.length) {
-                    pathDataNew.push(... comExt )
-                }else{
-                    pathDataNew.push(com )
+
+                let extremeData = addExtemesToCommand(p0, values, verbose);
+                let { pathData, tArr=[]} = extremeData;
+                //let comExt = pathData;
+
+                // found extremes?
+                if(pathData.length>1){
+
+                    /*
+                    */
+                   pathData.forEach((com,i)=>{
+                       if(i<pathData.length-1){
+                           let {values} = com;
+                           let pt = values.slice(-2)
+                           //renderPoint(g, pt)
+                       }
+                   })
+
+                    //verbose=true
+                    if (verbose) {
+                        tArr.forEach((t, i) => {
+                            pathData[i].t = t
+                        })
+                    }
                 }
+
+                pathDataNew.push(...pathData)
+
+
             }
         }
 
@@ -337,6 +366,7 @@ export function addExtremePoints(pathData) {
     }
 
     //console.log(pathData.length, pathDataNew.length)
+    //console.log('pathDataNew', pathDataNew);
     return pathDataNew;
 }
 

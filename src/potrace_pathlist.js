@@ -1,5 +1,6 @@
 import { Curve, Path } from "./constructors";
-import { getPotracePathData, getSVG } from "./svg";
+import { potracePathToPoly } from "./pathdata/pathData_from_potrace_Pathlist";
+//import { getPotracePathData, getSVG, pathlistToPolygon, potracePathToPoly } from "./potrace_svg";
 
 
 /**
@@ -13,7 +14,8 @@ export function potraceGetPathList(bmp, {
     turdsize = 1,
     optcurve = true,
     alphamax = 1,
-    opttolerance = 1
+    opttolerance = 1,
+    getPolygon = false
 } = {}) {
 
 
@@ -21,7 +23,8 @@ export function potraceGetPathList(bmp, {
      * processing
      */
 
-    let pathlist = [];
+    let pathList = [];
+    let polygons = [];
 
     function bmpToPathlist() {
 
@@ -111,6 +114,7 @@ export function potraceGetPathList(bmp, {
             }
 
             //console.log('turnpolicy', turnpolicy);
+            //console.log(path);
             return path;
         }
 
@@ -141,11 +145,11 @@ export function potraceGetPathList(bmp, {
             xorPath(path);
 
             if (path.area > turdsize) {
-                pathlist.push(path);
+                pathList.push(path);
             }
         }
 
-        return pathlist;
+        return pathList;
     }
 
 
@@ -432,8 +436,8 @@ export function potraceGetPathList(bmp, {
                     k = j + 1 - i + n;
                 }
 
-                px = (pt[i].x + pt[j].x) / 2.0 - pt[0].x;
-                py = (pt[i].y + pt[j].y) / 2.0 - pt[0].y;
+                px = (pt[i].x + pt[j].x) / 2 - pt[0].x;
+                py = (pt[i].y + pt[j].y) / 2 - pt[0].y;
                 ey = (pt[j].x - pt[i].x);
                 ex = -(pt[j].y - pt[i].y);
 
@@ -597,7 +601,7 @@ export function potraceGetPathList(bmp, {
             for (i = 0; i < m; i++) {
                 q[i] = new Quad();
                 d = dir[i].x * dir[i].x + dir[i].y * dir[i].y;
-                if (d === 0.0) {
+                if (d === 0) {
                     for (j = 0; j < 3; j++) {
                         for (k = 0; k < 3; k++) {
                             q[i].data[j * 3 + k] = 0;
@@ -633,7 +637,7 @@ export function potraceGetPathList(bmp, {
                 while (1) {
 
                     det = Q.at(0, 0) * Q.at(1, 1) - Q.at(0, 1) * Q.at(1, 0);
-                    if (det !== 0.0) {
+                    if (det !== 0) {
                         w.x = (-Q.at(0, 2) * Q.at(1, 1) + Q.at(1, 2) * Q.at(0, 1)) / det;
                         w.y = (Q.at(0, 2) * Q.at(1, 0) - Q.at(1, 2) * Q.at(0, 0)) / det;
                         break;
@@ -668,7 +672,7 @@ export function potraceGetPathList(bmp, {
                 xmin = s.x;
                 ymin = s.y;
 
-                if (Q.at(0, 0) !== 0.0) {
+                if (Q.at(0, 0) !== 0) {
                     for (z = 0; z < 2; z++) {
                         w.y = s.y - 0.5 + z;
                         w.x = - (Q.at(0, 1) * w.y + Q.at(0, 2)) / Q.at(0, 0);
@@ -682,7 +686,7 @@ export function potraceGetPathList(bmp, {
                     }
                 }
 
-                if (Q.at(1, 1) !== 0.0) {
+                if (Q.at(1, 1) !== 0) {
                     for (z = 0; z < 2; z++) {
                         w.x = s.x - 0.5 + z;
                         w.y = - (Q.at(1, 0) * w.x + Q.at(1, 2)) / Q.at(1, 1);
@@ -734,10 +738,10 @@ export function potraceGetPathList(bmp, {
                 p4 = interval(1 / 2.0, curve.vertex[k], curve.vertex[j]);
 
                 denom = ddenom(curve.vertex[i], curve.vertex[k]);
-                if (denom !== 0.0) {
+                if (denom !== 0) {
                     dd = getProd('dpara', curve.vertex[i], curve.vertex[j], curve.vertex[k]) / denom;
                     dd = Math.abs(dd);
-                    alpha = dd > 1 ? (1 - 1.0 / dd) : 0;
+                    alpha = dd > 1 ? (1 - 1 / dd) : 0;
                     alpha = alpha / 0.75;
                 } else {
                     alpha = 4 / 3.0;
@@ -767,6 +771,8 @@ export function potraceGetPathList(bmp, {
             curve.alphacurve = 1;
         }
 
+
+        // start opt
         function optiCurve(path) {
 
             function Opti() {
@@ -839,7 +845,7 @@ export function potraceGetPathList(bmp, {
                 s = A2 / (A2 - A1);
                 A = A2 * t / 2.0;
 
-                if (A === 0.0) {
+                if (A === 0) {
                     return 1;
                 }
 
@@ -865,7 +871,7 @@ export function potraceGetPathList(bmp, {
                     }
                     pt = bezier(t, p0, p1, p2, p3);
                     d = ddist(vertex[k], vertex[k1]);
-                    if (d === 0.0) {
+                    if (d === 0) {
                         return 1;
                     }
                     d1 = getProd('dpara', vertex[k], vertex[k1], pt) / d;
@@ -887,7 +893,7 @@ export function potraceGetPathList(bmp, {
                     }
                     pt = bezier(t, p0, p1, p2, p3);
                     d = ddist(curve.c[k * 3 + 2], curve.c[k1 * 3 + 2]);
-                    if (d === 0.0) {
+                    if (d === 0) {
                         return 1;
                     }
                     d1 = getProd('dpara', curve.c[k * 3 + 2], curve.c[k1 * 3 + 2], pt) / d;
@@ -928,8 +934,8 @@ export function potraceGetPathList(bmp, {
                 }
             }
 
-            area = 0.0;
-            areac[0] = 0.0;
+            area = 0;
+            areac[0] = 0;
             p0 = curve.vertex[0];
             for (i = 0; i < m; i++) {
                 i1 = mod(i + 1, m);
@@ -1007,8 +1013,10 @@ export function potraceGetPathList(bmp, {
             path.curve = ocurve;
         }
 
-        for (let i = 0; i < pathlist.length; i++) {
-            let path = pathlist[i];
+        // end opt
+
+        for (let i = 0; i < pathList.length; i++) {
+            let path = pathList[i];
 
             calcSums(path);
             calcLon(path);
@@ -1021,9 +1029,13 @@ export function potraceGetPathList(bmp, {
 
             smooth(path);
 
-            if (optcurve) {
-                optiCurve(path);
+            if (getPolygon) {
+                // get polygon 
+                let poly = potracePathToPoly(path)
+                polygons.push(poly)
             }
+
+            if (optcurve) { optiCurve(path) }
         }
 
     }
@@ -1035,6 +1047,19 @@ export function potraceGetPathList(bmp, {
     bmpToPathlist(bmp);
     processPath();
 
-    return pathlist;
+    //console.log(pathlist, poly);
+
+    if (getPolygon) {
+        let points = '';
+        polygons.forEach(poly => {
+            points += `M` + poly.map(pt => { return `${pt.x} ${pt.y}` }).join(' ')
+        })
+
+       // console.log(points);
+    }
+
+
+    //console.log(pathList);
+    return { pathList, polygons };
 
 }

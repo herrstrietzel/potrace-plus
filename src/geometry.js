@@ -262,18 +262,34 @@ export function pointAtT(pts, t = 0.5, getTangent = false, getCpts = false) {
 /**
  * get vertices from path command final on-path points
  */
-export function getPathDataVertices(pathData) {
+export function getPathDataVertices(pathData, includeCpts = false) {
     let polyPoints = [];
     let p0 = { x: pathData[0].values[0], y: pathData[0].values[1] };
 
     pathData.forEach((com) => {
         let { type, values } = com;
+
         // get final on path point from last 2 values
         if (values.length) {
+
+            //let pts = [];
+            if (includeCpts) {
+
+                //let pts = [];
+                for (let i = 1; i < values.length; i += 2) {
+                    polyPoints.push({ x: values[i - 1], y: values[i] })
+                }
+
+            } else {
+                polyPoints.push({ x: values[values.length - 2], y: values[values.length - 1] })
+            }
+
+            /*
             let pt = values.length > 1 ? { x: values[values.length - 2], y: values[values.length - 1] }
                 : (type === 'V' ? { x: p0.x, y: values[0] } : { x: values[0], y: p0.y });
             polyPoints.push(pt);
             p0 = pt;
+            */
         }
     });
     return polyPoints;

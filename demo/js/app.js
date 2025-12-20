@@ -1,107 +1,150 @@
-
-let tracingOptions = {
-    turnpolicy: "majority",
-    //turnpolicy: "right",
-    turdsize: 1,
-    optcurve: true,
-    alphamax: 1,
-    opttolerance: 1,
-
-    minSize: 1000,
-    maxSize: 5000,
-
-    scale: 1,
-    addDimensions: false,
-    toRelative: true,
-    toShorthands: true,
-    decimals: 2,
-
-    crop:true
-};
-
-(async () => {
-
-    let el = document.querySelector("#input svg");
-
-    let t1, t0
-
-    // example 1: SVG element
-
-    t0 = performance.now()
-
-    let traced_svgEl = await Potrace(el, tracingOptions);
-
-    t1 = performance.now() - t0;
+// potrace object
+let traced = {}
 
 
-    // get traced svg data
-    let svg_svgEl = traced_svgEl.getSVG()
-    console.log('timiing:', t1, traced_svgEl.pathData.length);
+window.addEventListener('DOMContentLoaded', (e) => {
 
-    // render
-    preview.insertAdjacentHTML('beforeend', svg_svgEl)
+    const imgPreview = document.getElementById('imgPreview')
 
+    let settings = enhanceInputsSettings;
 
+    // init
+    updateSVG(imgPreview, settings)
 
-    /*
-    // canvas 
-    let { minSize, maxSize } = tracingOptions;
-    let canvas = await svg2Canvas(el, { minSize, maxSize })
-    let traced_canvasEl = await Potrace(canvas, tracingOptions);
-    let svg_canvas = traced_canvasEl.getSVG()
-    document.body.insertAdjacentHTML('beforeend', svg_canvas)
-    */
+    // show markers
+    showMarkersInPreview(previewTraced, settings)
 
-    //blob
-    // 
-    let blob = new Blob([svg_svgEl], { type: 'image/svg+xml' })
-    //console.log(blob);
-    //let traced_blob = await Potrace(blob, tracingOptions);
-    //document.body.insertAdjacentHTML('beforeend', traced_blob.getSVG())
-
-
-    // array buffer
-    let buffer = await blob.arrayBuffer()
-    //let traced_buffer = await Potrace(buffer, tracingOptions);
-
-
-    //file
-    /*
-    let file = new File([blob], "test.svg");
-    //console.log(blob, file);
-    let traced_file = await Potrace(file, tracingOptions);
-    document.body.insertAdjacentHTML('beforeend', traced_file.getSVG())
-    */
+    /**
+     * update image
+     */
 
     inputFile.addEventListener('input', async (e) => {
-        let file = inputFile.files[0]
-        //let buffer = await file.arrayBuffer()
-        //console.log(buffer);
+        let file = inputFile.files[0];
 
-        t0 = 0
-        let traced_file = await Potrace(file, tracingOptions);
-        //let traced_file = await Potrace(buffer, tracingOptions);
+        let src = await URL.createObjectURL(file);
+        imgPreview.src = src;
 
-        t1 = performance.now()-t0
-        console.log('timing', t1);
-        document.body.insertAdjacentHTML('beforeend', traced_file.getSVG())
+        //updateSVG(imgPreview, settings)
+        document.dispatchEvent(new Event('settingsChange'))
 
+    }, true)
+
+    //{capture:true}
+
+
+    async function updateSVG(imgPreview, settings) {
+
+        let t0 = 0, t1 = 0;
+        try {
+            t0 = performance.now()
+            traced = await PotracePlus(imgPreview, settings);
+            t1 = performance.now() - t0;
+            //console.log(traced);
+        } catch {
+            alert("Could't trace image – please try another filter setting or reset settings")
+        }
+
+
+        let { brightness, contrast, invert, blur, split, optimize } = settings;
+        let { svg, svgSplit, d, width, height, commands, pathData } = traced
+
+        console.log(traced);
+
+        let blobSvg = new Blob([svg]);
+        let size = +(blobSvg.size / 1024).toFixed(3)
+        let sizePath = +(new Blob([d]).size / 1024).toFixed(3)
+
+        // return splited or combined svg
+        let traced_svg = !split ? svg : svgSplit;
+
+        // downloadLink
+        btnSvg.href = URL.createObjectURL(blobSvg);
+
+        // filters
+        invert = !invert ? '0' : '1';
+        let filter = `filter:grayscale(1) invert(${invert}) blur(${blur}px) brightness(${brightness}) contrast(${contrast});`;
+        imgPreview.style.cssText = filter;
+
+
+        // summary
+        info.textContent =
+            `commands: ${commands} \nwidth: ${width}\nheight: ${height} \nsize (svg): ${size} KB \nsize (path): ${sizePath} KB \ntime: ${+t1.toFixed(3)} ms`
+
+        // show markup
+        svgOut.value = traced_svg;
+        svgOutPath.value = d;
+
+        //render
+        previewTraced.innerHTML = '';
+        previewTraced.insertAdjacentHTML('beforeend', traced_svg)
+
+    }
+
+
+
+    document.addEventListener('settingsChange', async (e) => {
+
+        //console.log('new settings');
+        updateSVG(imgPreview, settings)
+
+        showMarkersInPreview(previewTraced, settings)
 
     })
 
+})
 
-    /*
-    // example : img element
-    let t0=performance.now()
-    let traced_imgEl = await Potrace(imgEl, tracingOptions);
-    let svg_imgEl = traced_imgEl.getSVG()
-    let t1=performance.now()-t0
-    console.log(t1);
-    preview.insertAdjacentHTML('beforeend', svg_imgEl)
-    */
+function showMarkersInPreview(target, settings = {}) {
+
+    if (settings.showCommands) {
+        target.classList.add('showMarkers')
+
+    } else {
+        target.classList.remove('showMarkers')
+    }
+}
+
+/**
+ * PDF download
+ */
+btnPDF.addEventListener('click', async (e) => {
+    let { d, svg, pathData, width, height } = traced;
+    Svg2Pdf(d, width, height)
+})
 
 
+async function Svg2Pdf(d, width, height) {
+
+    const doc = new PDFDocument({
+        size: [width, height],
+        margins: {
+            top: 0,
+            bottom: 0,
+            left: 0,
+            right: 0
+        }
+    });
+
+    // pipe the document to a blob
+    const stream = doc.pipe(blobStream());
+
+    doc.lineWidth(0);
+    doc.path(d)
+    doc.fill()
 
 
+    // get a blob when you're done
+    doc.end();
 
-})();
+    // get objectURL for display or download
+    stream.on("finish", async function () {
+        let blob = stream.toBlob("application/pdf");
+        let objectURL = await URL.createObjectURL(blob);
+
+        // set download link
+        btnDownload.href = objectURL
+        btnDownload.click();
+        // render via pdf.js
+        //renderPDF(objectURL);
+    });
+
+}

@@ -1,6 +1,6 @@
 
 //import { splitSubpaths } from "./convert_segments";
-import { splitSubpaths } from './pathData_split.js';
+import { splitSubpaths } from './pathdata/pathData_split.js';
 
 import { pointAtT, svgArcToCenterParam, getAngle, checkLineIntersection } from "./geometry";
 import { getSubPathBBoxes, checkBBoxIntersections } from "./geometry_bbox";

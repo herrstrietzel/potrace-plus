@@ -682,6 +682,1168 @@
         this.beta = new Array(n);
     }
 
+    function getPotracePathData(pathList = [], scale = 1) {
+
+        // sort pathList to top-left to bottom right
+        pathList.sort((a, b) => a.minX - b.minX || a.minY - b.minY);
+
+        let len = pathList.length;
+        let pathDataArr = [];
+
+        for (let l = 0; l < len; l++) {
+
+            let pathData = [];
+
+            // sub paths starting with ;M
+            let path = pathList[l];
+            let {curve, minX, maxX, minY, maxY, sign}  = path;
+
+            let bb = {
+                x: minX,
+                y: minY,
+                width: maxX-minX,
+                height: maxY-minY,
+            };
+
+            let n = curve.n, coms;
+
+            pathData.push(
+                {
+                    type: 'M', values: [
+                        curve.c[(n - 1) * 3 + 2].x * scale,
+                        curve.c[(n - 1) * 3 + 2].y * scale
+                    ],
+                    // save bbbox to each M
+                    bb,
+                    cw: sign==='+' ? true : false
+                },
+            );
+
+            for (let i = 0; i < n; i++) {
+                let type = curve.tag[i];
+                if (type === "curve") {
+                    coms = [{
+                        type: 'C', values: [
+                            curve.c[i * 3].x * scale,
+                            curve.c[i * 3].y * scale,
+                            curve.c[i * 3 + 1].x * scale,
+                            curve.c[i * 3 + 1].y * scale,
+                            curve.c[i * 3 + 2].x * scale,
+                            curve.c[i * 3 + 2].y * scale
+                        ]
+                    }];
+
+                } else if (type === "corner") {
+                    coms = [
+
+                        {
+                            type: 'L', values: [
+                                curve.c[i * 3 + 1].x * scale,
+                                curve.c[i * 3 + 1].y * scale,
+                            ]
+                        },
+                        {
+                            type: 'L', values: [
+                                curve.c[i * 3 + 2].x * scale,
+                                curve.c[i * 3 + 2].y * scale,
+                            ]
+                        }
+                    ];
+                }
+                pathData.push(...coms);
+            }
+
+            pathData.push({ type: 'Z', values: [] });
+
+            pathDataArr.push(pathData);
+
+        }
+
+        return pathDataArr
+
+    }
+
+    function potracePathToPoly(path, scale = 1) {
+
+        // sub paths starting with ;M
+        let curve = path.curve;
+        let n = curve.n;
+        let polygon = [];
+
+        // M
+        polygon.push({ x: curve.c[(n - 1) * 3 + 2].x * scale, y: curve.c[(n - 1) * 3 + 2].y * scale });
+
+        for (let i = 0; i < n; i++) {
+            let type = curve.tag[i];
+            if (type === "curve") {
+                // C
+                polygon.push({
+                    x: curve.c[i * 3 + 2].x * scale,
+                    y: curve.c[i * 3 + 2].y * scale
+                });
+
+            } else if (type === "corner") {
+
+                polygon.push(
+                    {
+                        x: curve.c[i * 3 + 1].x * scale,
+                        y: curve.c[i * 3 + 1].y * scale
+                    },
+                    {
+                        x: curve.c[i * 3 + 2].x * scale,
+                        y: curve.c[i * 3 + 2].y * scale
+                    }
+                );
+            }
+        }
+
+        return polygon
+    }
+
+    /**
+     * core tracing function
+     * expects a 1-bit black and white 
+     * image data array
+     * returns potrace internal pathList obect
+     */
+    function potraceGetPathList(bmp, {
+        turnpolicy = "majority",
+        turdsize = 1,
+        optcurve = true,
+        alphamax = 1,
+        opttolerance = 1,
+        getPolygon = false
+    } = {}) {
+
+        /**
+         * processing
+         */
+
+        let pathList = [];
+        let polygons = [];
+
+        function bmpToPathlist() {
+
+            let bmp1 = bmp.copy();
+            let currentPoint = { x: 0, y: 0 }, path;
+
+            function findNext(pt) {
+                let i = bmp1.w * pt.y + pt.x;
+                while (i < bmp1.size && bmp1.data[i] !== 1) {
+                    i++;
+                }
+                return i < bmp1.size && bmp1.index(i);
+            }
+
+            function majority(x, y) {
+                for (let i = 2; i < 5; i++) {
+                    let ct = 0;
+                    for (let a = -i + 1; a <= i - 1; a++) {
+                        ct += bmp1.at(x + a, y + i - 1) ? 1 : -1;
+                        ct += bmp1.at(x + i - 1, y + a - 1) ? 1 : -1;
+                        ct += bmp1.at(x + a - 1, y - i) ? 1 : -1;
+                        ct += bmp1.at(x - i, y + a) ? 1 : -1;
+                    }
+                    if (ct > 0) {
+                        return 1;
+                    } else if (ct < 0) {
+                        return 0;
+                    }
+                }
+                return 0;
+            }
+
+            function findPath(pt) {
+                let path = new Path(),
+                    x = pt.x, y = pt.y,
+                    dirx = 0, diry = 1, tmp;
+
+                path.sign = bmp.at(pt.x, pt.y) ? "+" : "-";
+
+                while (1) {
+
+                    path.pt.push({ x, y });
+
+                    if (x > path.maxX)
+                        path.maxX = x;
+                    if (x < path.minX)
+                        path.minX = x;
+                    if (y > path.maxY)
+                        path.maxY = y;
+                    if (y < path.minY)
+                        path.minY = y;
+                    path.len++;
+
+                    x += dirx;
+                    y += diry;
+                    path.area -= x * diry;
+
+                    if (x === pt.x && y === pt.y)
+                        break;
+
+                    let l = bmp1.at(x + (dirx + diry - 1) / 2, y + (diry - dirx - 1) / 2);
+                    let r = bmp1.at(x + (dirx - diry - 1) / 2, y + (diry + dirx - 1) / 2);
+
+                    if (r && !l) {
+                        if (turnpolicy === "right" ||
+                            (turnpolicy === "black" && path.sign === '+') ||
+                            (turnpolicy === "white" && path.sign === '-') ||
+                            (turnpolicy === "majority" && majority(x, y)) ||
+                            (turnpolicy === "minority" && !majority(x, y))) {
+                            tmp = dirx;
+                            dirx = -diry;
+                            diry = tmp;
+                        } else {
+                            tmp = dirx;
+                            dirx = diry;
+                            diry = -tmp;
+                        }
+                    } else if (r) {
+                        tmp = dirx;
+                        dirx = -diry;
+                        diry = tmp;
+                    } else if (!l) {
+                        tmp = dirx;
+                        dirx = diry;
+                        diry = -tmp;
+                    }
+                }
+
+                return path;
+            }
+
+            function xorPath(path) {
+                let y1 = path.pt[0].y,
+                    len = path.len,
+                    maxX, minY;
+                for (let i = 1; i < len; i++) {
+                    let x = path.pt[i].x;
+                    let y = path.pt[i].y;
+
+                    if (y !== y1) {
+                        minY = y1 < y ? y1 : y;
+                        maxX = path.maxX;
+                        for (let j = x; j < maxX; j++) {
+                            bmp1.flip(j, minY);
+                        }
+                        y1 = y;
+                    }
+                }
+            }
+
+            while (currentPoint = findNext(currentPoint)) {
+
+                path = findPath(currentPoint);
+                xorPath(path);
+
+                if (path.area > turdsize) {
+                    pathList.push(path);
+                }
+            }
+
+            return pathList;
+        }
+
+        function processPath() {
+
+            function Quad() {
+                this.data = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+            }
+
+            Quad.prototype.at = function (x, y) {
+                return this.data[x * 3 + y];
+            };
+
+            function Sum(x, y, xy, x2, y2) {
+                this.x = x;
+                this.y = y;
+                this.xy = xy;
+                this.x2 = x2;
+                this.y2 = y2;
+            }
+
+            function mod(a, n) {
+                return a >= n ? a % n : a >= 0 ? a : n - 1 - (-1 - a) % n;
+            }
+
+            function xprod(p1, p2) {
+                return p1.x * p2.y - p1.y * p2.x;
+            }
+
+            function cyclic(a, b, c) {
+                if (a <= c) {
+                    return (a <= b && b < c);
+                } else {
+                    return (a <= b || b < c);
+                }
+            }
+
+            function sign(i) {
+                return i > 0 ? 1 : i < 0 ? -1 : 0;
+            }
+
+            function quadform(Q, w) {
+                let v = new Array(3), sum = 0;
+
+                v[0] = w.x;
+                v[1] = w.y;
+                v[2] = 1;
+
+                for (let i = 0; i < 3; i++) {
+                    for (let j = 0; j < 3; j++) {
+                        sum += v[i] * Q.at(i, j) * v[j];
+                    }
+                }
+                return sum;
+            }
+
+            function interval(lambda, a, b) {
+                return { x: a.x + lambda * (b.x - a.x), y: a.y + lambda * (b.y - a.y) }
+            }
+
+            function dorth_infty(p0, p2) {
+                return { x: -sign(p2.y - p0.y), y: sign(p2.x - p0.x) }
+            }
+
+            function ddenom(p0, p2) {
+                let r = dorth_infty(p0, p2);
+
+                return r.y * (p2.x - p0.x) - r.x * (p2.y - p0.y);
+            }
+
+            function getProd(type = '', p0 = {}, p1 = {}, p2 = {}, p3 = {},) {
+                let x1, x2, y1, y2;
+                if (type === 'cprod' || type === 'iprod1') {
+                    x1 = p1.x - p0.x;
+                    y1 = p1.y - p0.y;
+                    x2 = p3.x - p2.x;
+                    y2 = p3.y - p2.y;
+                } else {
+                    x1 = p1.x - p0.x;
+                    y1 = p1.y - p0.y;
+                    x2 = p2.x - p0.x;
+                    y2 = p2.y - p0.y;
+                }
+                return type === 'cprod' || type === 'dpara' ? x1 * y2 - x2 * y1 : x1 * x2 + y1 * y2;
+            }
+
+            function ddist(p, q) {
+                return sqrt((p.x - q.x) ** 2 + (p.y - q.y) ** 2);
+
+            }
+
+            function bezier(t, p0, p1, p2, p3) {
+                let s = 1 - t;
+                return { x: s * s * s * p0.x + 3 * (s * s * t) * p1.x + 3 * (t * t * s) * p2.x + t * t * t * p3.x, y: s * s * s * p0.y + 3 * (s * s * t) * p1.y + 3 * (t * t * s) * p2.y + t * t * t * p3.y };
+            }
+
+            function tangent(p0, p1, p2, p3, q0, q1) {
+
+                let A = getProd('cprod', p0, p1, q0, q1);
+                let B = getProd('cprod', p1, p2, q0, q1);
+                let C = getProd('cprod', p2, p3, q0, q1);
+
+                let a = A - 2 * B + C;
+                let b = -2 * A + 2 * B;
+                let c = A;
+                let d = b * b - 4 * a * c;
+
+                if (a === 0 || d < 0) {
+                    return -1;
+                }
+
+                let s = sqrt(d);
+                let r1 = (-b + s) / (2 * a);
+                let r2 = (-b - s) / (2 * a);
+
+                if (r1 >= 0 && r1 <= 1) {
+                    return r1;
+                } else if (r2 >= 0 && r2 <= 1) {
+                    return r2;
+                } else {
+                    return -1;
+                }
+            }
+
+            function calcSums(path) {
+
+                path.x0 = path.pt[0].x;
+                path.y0 = path.pt[0].y;
+
+                path.sums = [];
+                let s = path.sums;
+                s.push(new Sum(0, 0, 0, 0, 0));
+                for (let i = 0; i < path.len; i++) {
+                    let x = path.pt[i].x - path.x0;
+                    let y = path.pt[i].y - path.y0;
+                    s.push(new Sum(s[i].x + x, s[i].y + y, s[i].xy + x * y,
+                        s[i].x2 + x * x, s[i].y2 + y * y));
+                }
+            }
+
+            function calcLon(path) {
+
+                let n = path.len, pt = path.pt, dir,
+                    pivk = new Array(n),
+                    nc = new Array(n),
+                    ct = new Array(4);
+                path.lon = new Array(n);
+
+                let constraint = [{ x: 0, y: 0 }, { x: 0, y: 0 }],
+                    cur = { x: 0, y: 0 },
+                    off = { x: 0, y: 0 },
+                    dk = { x: 0, y: 0 },
+                    foundk;
+
+                let i, j, k1, a, b, c, d, k = 0;
+                for (i = n - 1; i >= 0; i--) {
+                    if (pt[i].x != pt[k].x && pt[i].y != pt[k].y) {
+                        k = i + 1;
+                    }
+                    nc[i] = k;
+                }
+
+                for (i = n - 1; i >= 0; i--) {
+                    ct[0] = ct[1] = ct[2] = ct[3] = 0;
+                    dir = (3 + 3 * (pt[mod(i + 1, n)].x - pt[i].x) +
+                        (pt[mod(i + 1, n)].y - pt[i].y)) / 2;
+                    ct[dir]++;
+
+                    constraint[0].x = 0;
+                    constraint[0].y = 0;
+                    constraint[1].x = 0;
+                    constraint[1].y = 0;
+
+                    k = nc[i];
+                    k1 = i;
+                    while (1) {
+                        foundk = 0;
+                        dir = (3 + 3 * sign(pt[k].x - pt[k1].x) +
+                            sign(pt[k].y - pt[k1].y)) / 2;
+                        ct[dir]++;
+
+                        if (ct[0] && ct[1] && ct[2] && ct[3]) {
+                            pivk[i] = k1;
+                            foundk = 1;
+                            break;
+                        }
+
+                        cur.x = pt[k].x - pt[i].x;
+                        cur.y = pt[k].y - pt[i].y;
+
+                        if (xprod(constraint[0], cur) < 0 || xprod(constraint[1], cur) > 0) {
+                            break;
+                        }
+
+                        if (abs(cur.x) <= 1 && abs(cur.y) <= 1) ; else {
+                            off.x = cur.x + ((cur.y >= 0 && (cur.y > 0 || cur.x < 0)) ? 1 : -1);
+                            off.y = cur.y + ((cur.x <= 0 && (cur.x < 0 || cur.y < 0)) ? 1 : -1);
+                            if (xprod(constraint[0], off) >= 0) {
+                                constraint[0].x = off.x;
+                                constraint[0].y = off.y;
+                            }
+                            off.x = cur.x + ((cur.y <= 0 && (cur.y < 0 || cur.x < 0)) ? 1 : -1);
+                            off.y = cur.y + ((cur.x >= 0 && (cur.x > 0 || cur.y < 0)) ? 1 : -1);
+                            if (xprod(constraint[1], off) <= 0) {
+                                constraint[1].x = off.x;
+                                constraint[1].y = off.y;
+                            }
+                        }
+                        k1 = k;
+                        k = nc[k1];
+                        if (!cyclic(k, i, k1)) {
+                            break;
+                        }
+                    }
+                    if (foundk === 0) {
+                        dk.x = sign(pt[k].x - pt[k1].x);
+                        dk.y = sign(pt[k].y - pt[k1].y);
+                        cur.x = pt[k1].x - pt[i].x;
+                        cur.y = pt[k1].y - pt[i].y;
+
+                        a = xprod(constraint[0], cur);
+                        b = xprod(constraint[0], dk);
+                        c = xprod(constraint[1], cur);
+                        d = xprod(constraint[1], dk);
+
+                        j = 10000000;
+                        if (b < 0) {
+                            j = floor(a / -b);
+                        }
+                        if (d > 0) {
+                            j = min(j, floor(-c / d));
+                        }
+                        pivk[i] = mod(k1 + j, n);
+                    }
+                }
+
+                j = pivk[n - 1];
+                path.lon[n - 1] = j;
+                for (i = n - 2; i >= 0; i--) {
+                    if (cyclic(i + 1, pivk[i], j)) {
+                        j = pivk[i];
+                    }
+                    path.lon[i] = j;
+                }
+
+                for (i = n - 1; cyclic(mod(i + 1, n), j, path.lon[i]); i--) {
+                    path.lon[i] = j;
+                }
+            }
+
+            function bestPolygon(path) {
+
+                function penalty3(path, i, j) {
+
+                    let n = path.len, pt = path.pt, sums = path.sums;
+                    let x, y, xy, x2, y2,
+                        k, a, b, c, s,
+                        px, py, ex, ey,
+                        r = 0;
+                    if (j >= n) {
+                        j -= n;
+                        r = 1;
+                    }
+
+                    if (r === 0) {
+                        x = sums[j + 1].x - sums[i].x;
+                        y = sums[j + 1].y - sums[i].y;
+                        x2 = sums[j + 1].x2 - sums[i].x2;
+                        xy = sums[j + 1].xy - sums[i].xy;
+                        y2 = sums[j + 1].y2 - sums[i].y2;
+                        k = j + 1 - i;
+                    } else {
+                        x = sums[j + 1].x - sums[i].x + sums[n].x;
+                        y = sums[j + 1].y - sums[i].y + sums[n].y;
+                        x2 = sums[j + 1].x2 - sums[i].x2 + sums[n].x2;
+                        xy = sums[j + 1].xy - sums[i].xy + sums[n].xy;
+                        y2 = sums[j + 1].y2 - sums[i].y2 + sums[n].y2;
+                        k = j + 1 - i + n;
+                    }
+
+                    px = (pt[i].x + pt[j].x) / 2 - pt[0].x;
+                    py = (pt[i].y + pt[j].y) / 2 - pt[0].y;
+                    ey = (pt[j].x - pt[i].x);
+                    ex = -(pt[j].y - pt[i].y);
+
+                    a = ((x2 - 2 * x * px) / k + px * px);
+                    b = ((xy - x * py - y * px) / k + px * py);
+                    c = ((y2 - 2 * y * py) / k + py * py);
+
+                    s = ex * ex * a + 2 * ex * ey * b + ey * ey * c;
+
+                    return sqrt(s);
+                }
+
+                let i, j, m, k,
+                    n = path.len,
+                    pen = new Array(n + 1),
+                    prev = new Array(n + 1),
+                    clip0 = new Array(n),
+                    clip1 = new Array(n + 1),
+                    seg0 = new Array(n + 1),
+                    seg1 = new Array(n + 1),
+                    thispen, best, c;
+
+                for (i = 0; i < n; i++) {
+                    c = mod(path.lon[mod(i - 1, n)] - 1, n);
+                    if (c == i) {
+                        c = mod(i + 1, n);
+                    }
+                    if (c < i) {
+                        clip0[i] = n;
+                    } else {
+                        clip0[i] = c;
+                    }
+                }
+
+                j = 1;
+                for (i = 0; i < n; i++) {
+                    while (j <= clip0[i]) {
+                        clip1[j] = i;
+                        j++;
+                    }
+                }
+
+                i = 0;
+                for (j = 0; i < n; j++) {
+                    seg0[j] = i;
+                    i = clip0[i];
+                }
+                seg0[j] = n;
+                m = j;
+
+                i = n;
+                for (j = m; j > 0; j--) {
+                    seg1[j] = i;
+                    i = clip1[i];
+                }
+                seg1[0] = 0;
+
+                pen[0] = 0;
+                for (j = 1; j <= m; j++) {
+                    for (i = seg1[j]; i <= seg0[j]; i++) {
+                        best = -1;
+                        for (k = seg0[j - 1]; k >= clip1[i]; k--) {
+                            thispen = penalty3(path, k, i) + pen[k];
+                            if (best < 0 || thispen < best) {
+                                prev[i] = k;
+                                best = thispen;
+                            }
+                        }
+                        pen[i] = best;
+                    }
+                }
+                path.m = m;
+                path.po = new Array(m);
+
+                for (i = n, j = m - 1; i > 0; j--) {
+                    i = prev[i];
+                    path.po[j] = i;
+                }
+
+            }
+
+            function adjustVertices(path) {
+
+                function pointslope(path, i, j, ctr, dir) {
+
+                    let n = path.len, sums = path.sums,
+                        x, y, x2, xy, y2,
+                        k, a, b, c, lambda2, l, r = 0;
+
+                    while (j >= n) {
+                        j -= n;
+                        r += 1;
+                    }
+                    while (i >= n) {
+                        i -= n;
+                        r -= 1;
+                    }
+                    while (j < 0) {
+                        j += n;
+                        r -= 1;
+                    }
+                    while (i < 0) {
+                        i += n;
+                        r += 1;
+                    }
+
+                    x = sums[j + 1].x - sums[i].x + r * sums[n].x;
+                    y = sums[j + 1].y - sums[i].y + r * sums[n].y;
+                    x2 = sums[j + 1].x2 - sums[i].x2 + r * sums[n].x2;
+                    xy = sums[j + 1].xy - sums[i].xy + r * sums[n].xy;
+                    y2 = sums[j + 1].y2 - sums[i].y2 + r * sums[n].y2;
+                    k = j + 1 - i + r * n;
+
+                    ctr.x = x / k;
+                    ctr.y = y / k;
+
+                    a = (x2 - x * x / k) / k;
+                    b = (xy - x * y / k) / k;
+                    c = (y2 - y * y / k) / k;
+
+                    lambda2 = (a + c + sqrt((a - c) * (a - c) + 4 * b * b)) / 2;
+
+                    a -= lambda2;
+                    c -= lambda2;
+
+                    if (abs(a) >= abs(c)) {
+                        l = sqrt(a * a + b * b);
+                        if (l !== 0) {
+                            dir.x = -b / l;
+                            dir.y = a / l;
+                        }
+                    } else {
+                        l = sqrt(c * c + b * b);
+                        if (l !== 0) {
+                            dir.x = -c / l;
+                            dir.y = b / l;
+                        }
+                    }
+                    if (l === 0) {
+                        dir.x = dir.y = 0;
+                    }
+                }
+
+                let m = path.m, po = path.po, n = path.len, pt = path.pt,
+                    x0 = path.x0, y0 = path.y0,
+                    ctr = new Array(m), dir = new Array(m),
+                    q = new Array(m),
+                    v = new Array(3), d, i, j, k, l,
+                    s = { x: 0, y: 0 };
+
+                path.curve = new Curve(m);
+
+                for (i = 0; i < m; i++) {
+                    j = po[mod(i + 1, m)];
+                    j = mod(j - po[i], n) + po[i];
+                    ctr[i] = { x: 0, y: 0 };
+                    dir[i] = { x: 0, y: 0 };
+                    pointslope(path, po[i], j, ctr[i], dir[i]);
+                }
+
+                for (i = 0; i < m; i++) {
+                    q[i] = new Quad();
+                    d = dir[i].x * dir[i].x + dir[i].y * dir[i].y;
+                    if (d === 0) {
+                        for (j = 0; j < 3; j++) {
+                            for (k = 0; k < 3; k++) {
+                                q[i].data[j * 3 + k] = 0;
+                            }
+                        }
+                    } else {
+                        v[0] = dir[i].y;
+                        v[1] = -dir[i].x;
+                        v[2] = - v[1] * ctr[i].y - v[0] * ctr[i].x;
+                        for (l = 0; l < 3; l++) {
+                            for (k = 0; k < 3; k++) {
+                                q[i].data[l * 3 + k] = v[l] * v[k] / d;
+                            }
+                        }
+                    }
+                }
+
+                let Q, w, dx, dy, det, min, cand, xmin, ymin, z;
+                for (i = 0; i < m; i++) {
+                    Q = new Quad();
+                    w = { x: 0, y: 0 };
+                    s.x = pt[po[i]].x - x0;
+                    s.y = pt[po[i]].y - y0;
+
+                    j = mod(i - 1, m);
+
+                    for (l = 0; l < 3; l++) {
+                        for (k = 0; k < 3; k++) {
+                            Q.data[l * 3 + k] = q[j].at(l, k) + q[i].at(l, k);
+                        }
+                    }
+
+                    while (1) {
+
+                        det = Q.at(0, 0) * Q.at(1, 1) - Q.at(0, 1) * Q.at(1, 0);
+                        if (det !== 0) {
+                            w.x = (-Q.at(0, 2) * Q.at(1, 1) + Q.at(1, 2) * Q.at(0, 1)) / det;
+                            w.y = (Q.at(0, 2) * Q.at(1, 0) - Q.at(1, 2) * Q.at(0, 0)) / det;
+                            break;
+                        }
+
+                        if (Q.at(0, 0) > Q.at(1, 1)) {
+                            v[0] = -Q.at(0, 1);
+                            v[1] = Q.at(0, 0);
+                        } else if (Q.at(1, 1)) {
+                            v[0] = -Q.at(1, 1);
+                            v[1] = Q.at(1, 0);
+                        } else {
+                            v[0] = 1;
+                            v[1] = 0;
+                        }
+                        d = v[0] * v[0] + v[1] * v[1];
+                        v[2] = - v[1] * s.y - v[0] * s.x;
+                        for (l = 0; l < 3; l++) {
+                            for (k = 0; k < 3; k++) {
+                                Q.data[l * 3 + k] += v[l] * v[k] / d;
+                            }
+                        }
+                    }
+                    dx = abs(w.x - s.x);
+                    dy = abs(w.y - s.y);
+                    if (dx <= 0.5 && dy <= 0.5) {
+                        path.curve.vertex[i] = { x: w.x + x0, y: w.y + y0 };
+                        continue;
+                    }
+
+                    min = quadform(Q, s);
+                    xmin = s.x;
+                    ymin = s.y;
+
+                    if (Q.at(0, 0) !== 0) {
+                        for (z = 0; z < 2; z++) {
+                            w.y = s.y - 0.5 + z;
+                            w.x = - (Q.at(0, 1) * w.y + Q.at(0, 2)) / Q.at(0, 0);
+                            dx = abs(w.x - s.x);
+                            cand = quadform(Q, w);
+                            if (dx <= 0.5 && cand < min) {
+                                min = cand;
+                                xmin = w.x;
+                                ymin = w.y;
+                            }
+                        }
+                    }
+
+                    if (Q.at(1, 1) !== 0) {
+                        for (z = 0; z < 2; z++) {
+                            w.x = s.x - 0.5 + z;
+                            w.y = - (Q.at(1, 0) * w.x + Q.at(1, 2)) / Q.at(1, 1);
+                            dy = abs(w.y - s.y);
+                            cand = quadform(Q, w);
+                            if (dy <= 0.5 && cand < min) {
+                                min = cand;
+                                xmin = w.x;
+                                ymin = w.y;
+                            }
+                        }
+                    }
+
+                    for (l = 0; l < 2; l++) {
+                        for (k = 0; k < 2; k++) {
+                            w.x = s.x - 0.5 + l;
+                            w.y = s.y - 0.5 + k;
+                            cand = quadform(Q, w);
+                            if (cand < min) {
+                                min = cand;
+                                xmin = w.x;
+                                ymin = w.y;
+                            }
+                        }
+                    }
+                    path.curve.vertex[i] = { x: xmin + x0, y: ymin + y0 };
+                }
+            }
+
+            function reverse(path) {
+                let curve = path.curve, m = curve.n, v = curve.vertex, i, j, tmp;
+
+                for (i = 0, j = m - 1; i < j; i++, j--) {
+                    tmp = v[i];
+                    v[i] = v[j];
+                    v[j] = tmp;
+                }
+            }
+
+            function smooth(path) {
+                let m = path.curve.n, curve = path.curve;
+
+                let i, j, k, dd, denom, alpha,
+                    p2, p3, p4;
+
+                for (i = 0; i < m; i++) {
+                    j = mod(i + 1, m);
+                    k = mod(i + 2, m);
+                    p4 = interval(1 / 2.0, curve.vertex[k], curve.vertex[j]);
+
+                    denom = ddenom(curve.vertex[i], curve.vertex[k]);
+                    if (denom !== 0) {
+                        dd = getProd('dpara', curve.vertex[i], curve.vertex[j], curve.vertex[k]) / denom;
+                        dd = abs(dd);
+                        alpha = dd > 1 ? (1 - 1 / dd) : 0;
+                        alpha = alpha / 0.75;
+                    } else {
+                        alpha = 4 / 3.0;
+                    }
+                    curve.alpha0[j] = alpha;
+
+                    if (alpha >= alphamax) {
+                        curve.tag[j] = "corner";
+                        curve.c[3 * j + 1] = curve.vertex[j];
+                        curve.c[3 * j + 2] = p4;
+                    } else {
+                        if (alpha < 0.55) {
+                            alpha = 0.55;
+                        } else if (alpha > 1) {
+                            alpha = 1;
+                        }
+                        p2 = interval(0.5 + 0.5 * alpha, curve.vertex[i], curve.vertex[j]);
+                        p3 = interval(0.5 + 0.5 * alpha, curve.vertex[k], curve.vertex[j]);
+                        curve.tag[j] = "curve";
+                        curve.c[3 * j + 0] = p2;
+                        curve.c[3 * j + 1] = p3;
+                        curve.c[3 * j + 2] = p4;
+                    }
+                    curve.alpha[j] = alpha;
+                    curve.beta[j] = 0.5;
+                }
+                curve.alphacurve = 1;
+            }
+
+            // start opt
+            function optiCurve(path) {
+
+                function Opti() {
+                    this.pen = 0;
+                    this.c = [{ x: 0, y: 0 }, { x: 0, y: 0 }];
+                    this.t = 0;
+                    this.s = 0;
+                    this.alpha = 0;
+                }
+
+                function opti_penalty(path, i, j, res, opttolerance, convc, areac) {
+                    let m = path.curve.n, curve = path.curve, vertex = curve.vertex,
+                        k, k1, k2, conv, i1,
+                        area, alpha, d, d1, d2,
+                        p0, p1, p2, p3, pt,
+                        A, R, A1, A2, A3, A4,
+                        s, t;
+
+                    if (i == j) {
+                        return 1;
+                    }
+
+                    k = i;
+                    i1 = mod(i + 1, m);
+                    k1 = mod(k + 1, m);
+                    conv = convc[k1];
+                    if (conv === 0) {
+                        return 1;
+                    }
+                    d = ddist(vertex[i], vertex[i1]);
+                    for (k = k1; k != j; k = k1) {
+                        k1 = mod(k + 1, m);
+                        k2 = mod(k + 2, m);
+                        if (convc[k1] != conv) {
+                            return 1;
+                        }
+
+                        if (sign(getProd('cprod', vertex[i], vertex[i1], vertex[k1], vertex[k2])) !=
+                            conv) {
+                            return 1;
+                        }
+                        if (getProd('iprod1', vertex[i], vertex[i1], vertex[k1], vertex[k2]) <
+                            d * ddist(vertex[k1], vertex[k2]) * -0.999847695156) {
+                            return 1;
+                        }
+                    }
+
+                    p0 = curve.c[mod(i, m) * 3 + 2];
+                    p1 = vertex[mod(i + 1, m)];
+                    p2 = vertex[mod(j, m)];
+                    p3 = curve.c[mod(j, m) * 3 + 2];
+
+                    area = areac[j] - areac[i];
+                    area -= getProd('dpara', vertex[0], curve.c[i * 3 + 2], curve.c[j * 3 + 2]) / 2;
+                    if (i >= j) {
+                        area += areac[m];
+                    }
+
+                    A1 = getProd('dpara', p0, p1, p2);
+                    A2 = getProd('dpara', p0, p1, p3);
+                    A3 = getProd('dpara', p0, p2, p3);
+
+                    A4 = A1 + A3 - A2;
+
+                    if (A2 == A1) {
+                        return 1;
+                    }
+
+                    t = A3 / (A3 - A4);
+                    s = A2 / (A2 - A1);
+                    A = A2 * t / 2.0;
+
+                    if (A === 0) {
+                        return 1;
+                    }
+
+                    R = area / A;
+                    alpha = 2 - sqrt(4 - R / 0.3);
+
+                    res.c[0] = interval(t * alpha, p0, p1);
+                    res.c[1] = interval(s * alpha, p3, p2);
+                    res.alpha = alpha;
+                    res.t = t;
+                    res.s = s;
+
+                    p1 = { x: res.c[0].x, y: res.c[0].y };
+                    p2 = { x: res.c[1].x, y: res.c[1].y };
+
+                    res.pen = 0;
+
+                    for (k = mod(i + 1, m); k != j; k = k1) {
+                        k1 = mod(k + 1, m);
+                        t = tangent(p0, p1, p2, p3, vertex[k], vertex[k1]);
+                        if (t < -0.5) {
+                            return 1;
+                        }
+                        pt = bezier(t, p0, p1, p2, p3);
+                        d = ddist(vertex[k], vertex[k1]);
+                        if (d === 0) {
+                            return 1;
+                        }
+                        d1 = getProd('dpara', vertex[k], vertex[k1], pt) / d;
+                        if (abs(d1) > opttolerance) {
+                            return 1;
+                        }
+                        if (getProd('iprod', vertex[k], vertex[k1], pt) < 0 ||
+                            getProd('iprod', vertex[k1], vertex[k], pt) < 0) {
+                            return 1;
+                        }
+                        res.pen += d1 * d1;
+                    }
+
+                    for (k = i; k != j; k = k1) {
+                        k1 = mod(k + 1, m);
+                        t = tangent(p0, p1, p2, p3, curve.c[k * 3 + 2], curve.c[k1 * 3 + 2]);
+                        if (t < -0.5) {
+                            return 1;
+                        }
+                        pt = bezier(t, p0, p1, p2, p3);
+                        d = ddist(curve.c[k * 3 + 2], curve.c[k1 * 3 + 2]);
+                        if (d === 0) {
+                            return 1;
+                        }
+                        d1 = getProd('dpara', curve.c[k * 3 + 2], curve.c[k1 * 3 + 2], pt) / d;
+                        d2 = getProd('dpara', curve.c[k * 3 + 2], curve.c[k1 * 3 + 2], vertex[k1]) / d;
+                        d2 *= 0.75 * curve.alpha[k1];
+                        if (d2 < 0) {
+                            d1 = -d1;
+                            d2 = -d2;
+                        }
+                        if (d1 < d2 - opttolerance) {
+                            return 1;
+                        }
+                        if (d1 < d2) {
+                            res.pen += (d1 - d2) * (d1 - d2);
+                        }
+                    }
+
+                    return 0;
+                }
+
+                let curve = path.curve, m = curve.n, vert = curve.vertex,
+                    pt = new Array(m + 1),
+                    pen = new Array(m + 1),
+                    len = new Array(m + 1),
+                    opt = new Array(m + 1),
+                    om, i, j, r,
+                    o = new Opti(), p0,
+                    i1, area, alpha, ocurve,
+                    s, t;
+
+                let convc = new Array(m), areac = new Array(m + 1);
+
+                for (i = 0; i < m; i++) {
+                    if (curve.tag[i] == "curve") {
+                        convc[i] = sign(getProd('dpara', vert[mod(i - 1, m)], vert[i], vert[mod(i + 1, m)]));
+                    } else {
+                        convc[i] = 0;
+                    }
+                }
+
+                area = 0;
+                areac[0] = 0;
+                p0 = curve.vertex[0];
+                for (i = 0; i < m; i++) {
+                    i1 = mod(i + 1, m);
+                    if (curve.tag[i1] == "curve") {
+                        alpha = curve.alpha[i1];
+                        area += 0.3 * alpha * (4 - alpha) *
+                            getProd('dpara', curve.c[i * 3 + 2], vert[i1], curve.c[i1 * 3 + 2]) / 2;
+                        area += getProd('dpara', p0, curve.c[i * 3 + 2], curve.c[i1 * 3 + 2]) / 2;
+                    }
+                    areac[i + 1] = area;
+                }
+
+                pt[0] = -1;
+                pen[0] = 0;
+                len[0] = 0;
+
+                for (j = 1; j <= m; j++) {
+                    pt[j] = j - 1;
+                    pen[j] = pen[j - 1];
+                    len[j] = len[j - 1] + 1;
+
+                    for (i = j - 2; i >= 0; i--) {
+                        r = opti_penalty(path, i, mod(j, m), o, opttolerance, convc,
+                            areac);
+                        if (r) {
+                            break;
+                        }
+                        if (len[j] > len[i] + 1 ||
+                            (len[j] == len[i] + 1 && pen[j] > pen[i] + o.pen)) {
+                            pt[j] = i;
+                            pen[j] = pen[i] + o.pen;
+                            len[j] = len[i] + 1;
+                            opt[j] = o;
+                            o = new Opti();
+                        }
+                    }
+                }
+                om = len[m];
+                ocurve = new Curve(om);
+                s = new Array(om);
+                t = new Array(om);
+
+                j = m;
+                for (i = om - 1; i >= 0; i--) {
+                    if (pt[j] == j - 1) {
+                        ocurve.tag[i] = curve.tag[mod(j, m)];
+                        ocurve.c[i * 3 + 0] = curve.c[mod(j, m) * 3 + 0];
+                        ocurve.c[i * 3 + 1] = curve.c[mod(j, m) * 3 + 1];
+                        ocurve.c[i * 3 + 2] = curve.c[mod(j, m) * 3 + 2];
+                        ocurve.vertex[i] = curve.vertex[mod(j, m)];
+                        ocurve.alpha[i] = curve.alpha[mod(j, m)];
+                        ocurve.alpha0[i] = curve.alpha0[mod(j, m)];
+                        ocurve.beta[i] = curve.beta[mod(j, m)];
+                        s[i] = t[i] = 1.0;
+                    } else {
+                        ocurve.tag[i] = "curve";
+                        ocurve.c[i * 3 + 0] = opt[j].c[0];
+                        ocurve.c[i * 3 + 1] = opt[j].c[1];
+                        ocurve.c[i * 3 + 2] = curve.c[mod(j, m) * 3 + 2];
+                        ocurve.vertex[i] = interval(opt[j].s, curve.c[mod(j, m) * 3 + 2],
+                            vert[mod(j, m)]);
+                        ocurve.alpha[i] = opt[j].alpha;
+                        ocurve.alpha0[i] = opt[j].alpha;
+                        s[i] = opt[j].s;
+                        t[i] = opt[j].t;
+                    }
+                    j = pt[j];
+                }
+
+                for (i = 0; i < om; i++) {
+                    i1 = mod(i + 1, om);
+                    ocurve.beta[i] = s[i] / (s[i] + t[i1]);
+                }
+                ocurve.alphacurve = 1;
+                path.curve = ocurve;
+            }
+
+            // end opt
+
+            for (let i = 0; i < pathList.length; i++) {
+                let path = pathList[i];
+
+                calcSums(path);
+                calcLon(path);
+                bestPolygon(path);
+                adjustVertices(path);
+
+                if (path.sign === "-") {
+                    reverse(path);
+                }
+
+                smooth(path);
+
+                if (getPolygon) {
+                    // get polygon 
+                    let poly = potracePathToPoly(path);
+                    polygons.push(poly);
+                }
+
+                if (optcurve) { optiCurve(path); }
+            }
+
+        }
+
+        /**
+         * run tracing
+         */
+
+        bmpToPathlist();
+        processPath();
+
+        if (getPolygon) {
+            let points = '';
+            polygons.forEach(poly => {
+                points += `M` + poly.map(pt => { return `${pt.x} ${pt.y}` }).join(' ');
+            });
+
+           // console.log(points);
+        }
+
+        return { pathList, polygons };
+
+    }
+
     const {
         abs, acos, asin, atan, atan2, ceil, cos, exp, floor,
         log, max, min, pow, random, round, sin, sqrt, tan, PI
@@ -729,6 +1891,10 @@
             }
         }
         return inside ? true : false;
+    }
+
+    function getSquareDistance(p1, p2) {
+        return (p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2
     }
 
     /**
@@ -861,291 +2027,34 @@
     /**
      * get vertices from path command final on-path points
      */
-    function getPathDataVertices(pathData) {
+    function getPathDataVertices(pathData, includeCpts = false) {
         let polyPoints = [];
-        let p0 = { x: pathData[0].values[0], y: pathData[0].values[1] };
+        ({ x: pathData[0].values[0], y: pathData[0].values[1] });
 
         pathData.forEach((com) => {
             let { type, values } = com;
+
             // get final on path point from last 2 values
             if (values.length) {
-                let pt = values.length > 1 ? { x: values[values.length - 2], y: values[values.length - 1] }
-                    : (type === 'V' ? { x: p0.x, y: values[0] } : { x: values[0], y: p0.y });
-                polyPoints.push(pt);
-                p0 = pt;
+
+                if (includeCpts) {
+
+                    for (let i = 1; i < values.length; i += 2) {
+                        polyPoints.push({ x: values[i - 1], y: values[i] });
+                    }
+
+                } else {
+                    polyPoints.push({ x: values[values.length - 2], y: values[values.length - 1] });
+                }
+
             }
         });
         return polyPoints;
     }
 
-    /**
-     *  based on @cuixiping;
-     *  https://stackoverflow.com/questions/9017100/calculate-center-of-svg-arc/12329083#12329083
-     */
-    function svgArcToCenterParam(x1, y1, rx, ry, xAxisRotation, largeArc, sweep, x2, y2) {
-
-        // helper for angle calculation
-        const getAngle = (cx, cy, x, y) => {
-            return atan2(y - cy, x - cx);
-        };
-
-        // make sure rx, ry are positive
-        rx = abs(rx);
-        ry = abs(ry);
-
-        // create data object
-        let arcData = {
-            cx: 0,
-            cy: 0,
-            // rx/ry values may be deceptive in arc commands
-            rx: rx,
-            ry: ry,
-            startAngle: 0,
-            endAngle: 0,
-            deltaAngle: 0,
-            clockwise: sweep,
-            // copy explicit arc properties
-            xAxisRotation,
-            largeArc,
-            sweep
-        };
-
-        if (rx == 0 || ry == 0) {
-            // invalid arguments
-            throw Error("rx and ry can not be 0");
-        }
-
-        let shortcut = true;
-
-        if (rx === ry && shortcut) {
-
-            // test semicircles
-            let diffX = abs(x2 - x1);
-            let diffY = abs(y2 - y1);
-            let r = diffX;
-
-            let xMin = min(x1, x2),
-                yMin = min(y1, y2),
-                PIHalf = PI * 0.5;
-
-            // semi circles
-            if (diffX === 0 && diffY || diffY === 0 && diffX) {
-
-                r = diffX === 0 && diffY ? diffY / 2 : diffX / 2;
-                arcData.rx = r;
-                arcData.ry = r;
-
-                // verical
-                if (diffX === 0 && diffY) {
-                    arcData.cx = x1;
-                    arcData.cy = yMin + diffY / 2;
-                    arcData.startAngle = y1 > y2 ? PIHalf : -PIHalf;
-                    arcData.endAngle = y1 > y2 ? -PIHalf : PIHalf;
-                    arcData.deltaAngle = sweep ? PI : -PI;
-
-                }
-                // horizontal
-                else if (diffY === 0 && diffX) {
-                    arcData.cx = xMin + diffX / 2;
-                    arcData.cy = y1;
-                    arcData.startAngle = x1 > x2 ? PI : 0;
-                    arcData.endAngle = x1 > x2 ? -PI : PI;
-                    arcData.deltaAngle = sweep ? PI : -PI;
-                }
-
-                return arcData;
-            }
-        }
-
-        /**
-         * if rx===ry x-axis rotation is ignored
-         * otherwise convert degrees to radians
-         */
-        let phi = rx === ry ? 0 : (xAxisRotation * PI) / 180;
-        let cx, cy;
-
-        let s_phi = !phi ? 0 : sin(phi);
-        let c_phi = !phi ? 1 : cos(phi);
-
-        let hd_x = (x1 - x2) / 2;
-        let hd_y = (y1 - y2) / 2;
-        let hs_x = (x1 + x2) / 2;
-        let hs_y = (y1 + y2) / 2;
-
-        // F6.5.1
-        let x1_ = !phi ? hd_x : c_phi * hd_x + s_phi * hd_y;
-        let y1_ = !phi ? hd_y : c_phi * hd_y - s_phi * hd_x;
-
-        // F.6.6 Correction of out-of-range radii
-        //   Step 3: Ensure radii are large enough
-        let lambda = (x1_ * x1_) / (rx * rx) + (y1_ * y1_) / (ry * ry);
-        if (lambda > 1) {
-            rx = rx * sqrt(lambda);
-            ry = ry * sqrt(lambda);
-
-            // save real rx/ry
-            arcData.rx = rx;
-            arcData.ry = ry;
-        }
-
-        let rxry = rx * ry;
-        let rxy1_ = rx * y1_;
-        let ryx1_ = ry * x1_;
-        let sum_of_sq = rxy1_ ** 2 + ryx1_ ** 2; // sum of square
-        if (!sum_of_sq) {
-
-            throw Error("start point can not be same as end point");
-        }
-        let coe = sqrt(abs((rxry * rxry - sum_of_sq) / sum_of_sq));
-        if (largeArc == sweep) {
-            coe = -coe;
-        }
-
-        // F6.5.2
-        let cx_ = (coe * rxy1_) / ry;
-        let cy_ = (-coe * ryx1_) / rx;
-
-        /** F6.5.3
-         * center point of ellipse
-         */
-        cx = !phi ? hs_x + cx_ : c_phi * cx_ - s_phi * cy_ + hs_x;
-        cy = !phi ? hs_y + cy_ : s_phi * cx_ + c_phi * cy_ + hs_y;
-        arcData.cy = cy;
-        arcData.cx = cx;
-
-        /** F6.5.5
-         * calculate angles between center point and
-         * commands starting and final on path point
-         */
-        let startAngle = getAngle(cx, cy, x1, y1);
-        let endAngle = getAngle(cx, cy, x2, y2);
-
-        // adjust end angle
-        if (!sweep && endAngle > startAngle) {
-
-            endAngle -= PI * 2;
-        }
-
-        if (sweep && startAngle > endAngle) {
-
-            endAngle = endAngle <= 0 ? endAngle + PI * 2 : endAngle;
-        }
-
-        let deltaAngle = endAngle - startAngle;
-        arcData.startAngle = startAngle;
-        arcData.endAngle = endAngle;
-        arcData.deltaAngle = deltaAngle;
-
-        return arcData;
-    }
-
     function getBezierExtremeT(pts) {
         let tArr = pts.length === 4 ? cubicBezierExtremeT(pts[0], pts[1], pts[2], pts[3]) : quadraticBezierExtremeT(pts[0], pts[1], pts[2]);
         return tArr;
-    }
-
-    /**
-     * based on Nikos M.'s answer
-     * how-do-you-calculate-the-axis-aligned-bounding-box-of-an-ellipse
-     * https://stackoverflow.com/questions/87734/#75031511
-     * See also: https://github.com/foo123/Geometrize
-     */
-    function getArcExtemes(p0, values) {
-        // compute point on ellipse from angle around ellipse (theta)
-        const arc = (theta, cx, cy, rx, ry, alpha) => {
-            // theta is angle in radians around arc
-            // alpha is angle of rotation of ellipse in radians
-            var cos = cos(alpha),
-                sin = sin(alpha),
-                x = rx * cos(theta),
-                y = ry * sin(theta);
-
-            return {
-                x: cx + cos * x - sin * y,
-                y: cy + sin * x + cos * y
-            };
-        };
-
-        let arcData = svgArcToCenterParam(p0.x, p0.y, values[0], values[1], values[2], values[3], values[4], values[5], values[6]);
-        let { rx, ry, cx, cy, endAngle, deltaAngle } = arcData;
-
-        // arc rotation
-        let deg = values[2];
-
-        // final on path point
-        let p = { x: values[5], y: values[6] };
-
-        // collect extreme points – add end point
-        let extremes = [p];
-
-        // rotation to radians
-        let alpha = deg * PI / 180;
-        let tan = tan(alpha),
-            p1, p2, p3, p4, theta;
-
-        /**
-        * find min/max from zeroes of directional derivative along x and y
-        * along x axis
-        */
-        theta = atan2(-ry * tan, rx);
-
-        let angle1 = theta;
-        let angle2 = theta + PI;
-        let angle3 = atan2(ry, rx * tan);
-        let angle4 = angle3 + PI;
-
-        // inner bounding box
-        let xArr = [p0.x, p.x];
-        let yArr = [p0.y, p.y];
-        let xMin = min(...xArr);
-        let xMax = max(...xArr);
-        let yMin = min(...yArr);
-        let yMax = max(...yArr);
-
-        // on path point close after start
-        let angleAfterStart = endAngle - deltaAngle * 0.001;
-        let pP2 = arc(angleAfterStart, cx, cy, rx, ry, alpha);
-
-        // on path point close before end
-        let angleBeforeEnd = endAngle - deltaAngle * 0.999;
-        let pP3 = arc(angleBeforeEnd, cx, cy, rx, ry, alpha);
-
-        /**
-         * expected extremes
-         * if leaving inner bounding box
-         * (between segment start and end point)
-         * otherwise exclude elliptic extreme points
-        */
-
-        // right
-        if (pP2.x > xMax || pP3.x > xMax) {
-            // get point for this theta
-            p1 = arc(angle1, cx, cy, rx, ry, alpha);
-            extremes.push(p1);
-        }
-
-        // left
-        if (pP2.x < xMin || pP3.x < xMin) {
-            // get anti-symmetric point
-            p2 = arc(angle2, cx, cy, rx, ry, alpha);
-            extremes.push(p2);
-        }
-
-        // top
-        if (pP2.y < yMin || pP3.y < yMin) {
-            // get anti-symmetric point
-            p4 = arc(angle4, cx, cy, rx, ry, alpha);
-            extremes.push(p4);
-        }
-
-        // bottom
-        if (pP2.y > yMax || pP3.y > yMax) {
-            // get point for this theta
-            p3 = arc(angle3, cx, cy, rx, ry, alpha);
-            extremes.push(p3);
-        }
-
-        return extremes;
     }
 
     // cubic bezier.
@@ -1264,11 +2173,10 @@
 
         let subPathArr = [];
 
-        
-        try{
+        try {
             let subPathIndices = pathData.map((com, i) => (com.type.toLowerCase() === 'm' ? i : -1)).filter(i => i !== -1);
 
-        }catch{
+        } catch {
             console.log('catch', pathData);
         }
 
@@ -1298,7 +2206,7 @@
         let cp1 = points[1];
         let cp2 = points[points.length - 2];
         let p = points[points.length - 1];
-        let m0,m1,m2,m3,m4, p2;
+        let m0, m1, m2, m3, m4, p2;
 
         // cubic
         if (points.length === 4) {
@@ -1371,7 +2279,7 @@
      * calculate command extremes
      */
 
-    function addExtemesToCommand(p0, values) {
+    function addExtemesToCommand(p0, values, verbose = false) {
 
         let pathDataNew = [];
 
@@ -1387,6 +2295,7 @@
         let yMin = min(p.y, p0.y);
 
         let extremeCount = 0;
+        let tArr = [];
 
         if (
             cp1.x < xMin ||
@@ -1400,12 +2309,16 @@
 
         ) {
             let pts = type === 'C' ? [p0, cp1, cp2, p] : [p0, cp1, p];
-            let tArr = getBezierExtremeT(pts).sort();
-            if(tArr.length){
+            tArr = getBezierExtremeT(pts).sort();
+
+            // avoid small t values
+            tArr = tArr.filter(t=>t>0.05 && t<0.95);
+
+            if (tArr.length) {
                 let commandsSplit = splitCommandAtTValues(p0, values, tArr);
                 pathDataNew.push(...commandsSplit);
                 extremeCount += commandsSplit.length;
-            }else {
+            } else {
 
                 pathDataNew.push({ type: type, values: values });
             }
@@ -1416,12 +2329,13 @@
             pathDataNew.push({ type: type, values: values });
         }
 
-        return { pathData: pathDataNew, count: extremeCount };
+        return { pathData: pathDataNew, count: extremeCount, tArr };
 
     }
 
-    function addExtremePoints(pathData) {
+    function addExtremePoints(pathData, verbose = false) {
         let pathDataNew = [pathData[0]];
+
         // previous on path point
         let p0 = { x: pathData[0].values[0], y: pathData[0].values[1] };
         let M = { x: pathData[0].values[0], y: pathData[0].values[1] };
@@ -1441,13 +2355,30 @@
             else {
                 // add extremes
                 if (type === 'C' || type === 'Q') {
-                    let comExt = addExtemesToCommand(p0, values).pathData;
 
-                    if(comExt.length) {
-                        pathDataNew.push(... comExt );
-                    }else {
-                        pathDataNew.push(com );
+                    let extremeData = addExtemesToCommand(p0, values, verbose);
+                    let { pathData, tArr=[]} = extremeData;
+
+                    // found extremes?
+                    if(pathData.length>1){
+
+                       pathData.forEach((com,i)=>{
+                           if(i<pathData.length-1){
+                               let {values} = com;
+                               values.slice(-2);
+
+                           }
+                       });
+
+                        if (verbose) {
+                            tArr.forEach((t, i) => {
+                                pathData[i].t = t;
+                            });
+                        }
                     }
+
+                    pathDataNew.push(...pathData);
+
                 }
             }
 
@@ -1620,135 +2551,257 @@
         return intersects;
     }
 
-    /**
-     * get exact path BBox
-     * calculating extremes for all command types
-     */
-
-    function getPathDataBBox(pathData) {
-
-        // save extreme values
-        let xMin = Infinity;
-        let xMax = -Infinity;
-        let yMin = Infinity;
-        let yMax = -Infinity;
-
-        const setXYmaxMin = (pt) => {
-            if (pt.x < xMin) {
-                xMin = pt.x;
-            }
-            if (pt.x > xMax) {
-                xMax = pt.x;
-            }
-            if (pt.y < yMin) {
-                yMin = pt.y;
-            }
-            if (pt.y > yMax) {
-                yMax = pt.y;
-            }
-        };
-
-        for (let i = 0; i < pathData.length; i++) {
-            let com = pathData[i];
-            let { type, values } = com;
-            let valuesL = values.length;
-            let comPrev = pathData[i - 1] ? pathData[i - 1] : pathData[i];
-            let valuesPrev = comPrev.values;
-            let valuesPrevL = valuesPrev.length;
-
-            if (valuesL) {
-                let p0 = { x: valuesPrev[valuesPrevL - 2], y: valuesPrev[valuesPrevL - 1] };
-                let p = { x: values[valuesL - 2], y: values[valuesL - 1] };
-                // add final on path point
-                setXYmaxMin(p);
-
-                if (type === 'C' || type === 'Q') {
-                    let cp1 = { x: values[0], y: values[1] };
-                    let cp2 = type === 'C' ? { x: values[2], y: values[3] } : cp1;
-                    let pts = type === 'C' ? [p0, cp1, cp2, p] : [p0, cp1, p];
-
-                    let bezierExtremesT = getBezierExtremeT(pts);
-                    bezierExtremesT.forEach(t => {
-                        let pt = pointAtT(pts, t);
-                        setXYmaxMin(pt);
-                    });
-                }
-
-                else if (type === 'A') {
-                    let arcExtremes = getArcExtemes(p0, values);
-                    arcExtremes.forEach(pt => {
-                        setXYmaxMin(pt);
-                    });
-                }
-            }
+    function getPolygonArea(points, tolerance = 0.001) {
+        let area = 0;
+        for (let i = 0, len = points.length; len && i < len; i++) {
+            let addX = points[i].x;
+            let addY = points[i === points.length - 1 ? 0 : i + 1].y;
+            let subX = points[i === points.length - 1 ? 0 : i + 1].x;
+            let subY = points[i].y;
+            area += addX * addY * 0.5 - subX * subY * 0.5;
         }
-
-        let bbox = { x: xMin, y: yMin, width: xMax - xMin, height: yMax - yMin };
-        return bbox
+        return area;
     }
 
     /**
-     * reorder pathdata by x/y
+     * shift starting point
+     */
+    function shiftSvgStartingPoint(pathData, offset) {
+        let pathDataL = pathData.length;
+        let newStartIndex = 0;
+        let lastCommand = pathData[pathDataL - 1]["type"];
+        let isClosed = lastCommand.toLowerCase() === "z";
+
+        if (!isClosed || offset < 1 || pathData.length < 3) {
+            return pathData;
+        }
+
+        let trimRight = isClosed ? 1 : 0;
+
+        // add explicit lineto
+        addClosePathLineto(pathData);
+
+        // M start offset
+        newStartIndex =
+            offset + 1 < pathData.length - 1
+                ? offset + 1
+                : pathData.length - 1 - trimRight;
+
+        // slice array to reorder
+        let pathDataStart = pathData.slice(newStartIndex);
+        let pathDataEnd = pathData.slice(0, newStartIndex);
+
+        // remove original M
+        pathDataEnd.shift();
+        let pathDataEndL = pathDataEnd.length;
+
+        let pathDataEndLastValues, pathDataEndLastXY;
+        pathDataEndLastValues = pathDataEnd[pathDataEndL - 1].values || [];
+        pathDataEndLastXY = [
+            pathDataEndLastValues[pathDataEndLastValues.length - 2],
+            pathDataEndLastValues[pathDataEndLastValues.length - 1]
+        ];
+
+        if (trimRight) {
+            pathDataStart.pop();
+            pathDataEnd.push({
+                type: "Z",
+                values: []
+            });
+        }
+        // prepend new M command and concatenate array chunks
+        pathData = [
+            {
+                type: "M",
+                values: pathDataEndLastXY
+            },
+            ...pathDataStart,
+            ...pathDataEnd,
+        ];
+
+        return pathData;
+    }
+
+    /**
+     * Add closing lineto:
+     * needed for path reversing or adding points
      */
 
-    function reorderPathData(pathData, sortBy = ["x", "y"]) {
+    function addClosePathLineto(pathData) {
+        let pathDataL = pathData.length;
+        let closed = pathData[pathDataL - 1]["type"] == "Z" ? true : false;
 
-       // console.log('reorderPathData');
+        let M = pathData[0];
+        let [x0, y0] = [M.values[0], M.values[1]].map(val => { return +val.toFixed(8) });
+        let lastCom = closed ? pathData[pathDataL - 2] : pathData[pathDataL - 1];
+        let lastComL = lastCom.values.length;
+        let [xE, yE] = [lastCom.values[lastComL - 2], lastCom.values[lastComL - 1]].map(val => { return +val.toFixed(8) });
 
-        const fieldSorter = (fields) => {
-            return function (a, b) {
-                return fields
-                    .map(function (o) {
-                        var dir = 1;
-                        if (o[0] === "-") {
-                            dir = -1;
-                            o = o.substring(1);
-                        }
-                        if (a[o] > b[o]) return dir;
-                        if (a[o] < b[o]) return -dir;
-                        return 0;
-                    })
-                    .reduce(function firstNonZeroValue(p, n) {
-                        return p ? p : n;
-                    }, 0);
-            };
-        };
+        if (closed && (x0 != xE || y0 != yE)) {
 
-        // split sub paths
-        let pathDataArr = splitSubpaths(pathData);
+            pathData.pop();
+            pathData.push(
+                {
+                    type: "L",
+                    values: [x0, y0]
+                },
+                {
+                    type: "Z",
+                    values: []
+                }
+            );
+        }
 
-        // has no sub paths - quit
-        if (pathDataArr.length === 1) {
+        return pathData;
+    }
+
+    function pathDataToTopLeft2(pathData,
+        {
+            removeFinalLineto = true,
+            startToTop = true,
+            bb={x:0,y:0,width:0,height:0}
+        } = {}
+    ) {
+
+        let pathDataNew = [];
+
+        let len = pathData.length;
+        let M = { x: pathData[0].values[0], y: pathData[0].values[1] };
+        let isClosed = pathData[len - 1].type.toLowerCase() === 'z';
+
+        // we can't change starting point for non closed paths
+        if (!isClosed) {
             return pathData
         }
 
-        let subPathArr = [];
-        pathDataArr.forEach(function (pathData, i) {
-            // get verices from path data final points to approximate bbox
-            let polyPoints = getPathDataVertices(pathData);
-            let bb = getPolyBBox(polyPoints);
-            let { x, y, width, height } = bb;
+        let newIndex = 0;
 
-            // collect bbox info
-            subPathArr.push({
-                x: x,
-                y: y,
-                width: width,
-                height: height,
-                index: i
-            });
-        });
+        // top left point
 
-        subPathArr.sort(fieldSorter(sortBy));
+        if (startToTop) {
 
-        // compile new path data
-        let pathDataSorted = [];
-        subPathArr.forEach(function (sub, i) {
-            let index = sub.index;
-            pathDataSorted.push(...pathDataArr[index]);
-        });
+            let indices = [];
+            for (let i = 0, len = pathData.length; i < len; i++) {
+                let com = pathData[i];
+                let { type, values } = com;
+                if (values.length) {
 
-        return pathDataSorted;
+                    let valsL = values.slice(-2);
+                    let p = { x: valsL[0], y: valsL[1], dist: 0, index: 0 };
+
+                    // add square distance
+
+                    p.index = i;
+                    indices.push(p);
+
+                }
+            }
+
+            // find top most
+            indices = indices.sort((a, b) => a.y - b.y || a.x - b.x);
+            newIndex = indices[0].index;
+
+        }
+
+        // reorder 
+        pathData = shiftSvgStartingPoint(pathData, newIndex);
+        len = pathData.length;
+
+        // update M
+        M = { x: pathData[0].values[0], y: pathData[0].values[1] };
+
+        // remove last lineto
+        let penultimateCom = pathData[len - 2];
+        let penultimateType = penultimateCom.type;
+        let penultimateComCoords = penultimateCom.values.slice(-2);
+
+        let tolerance = 0.00001;
+        let diffX= abs(penultimateComCoords[0] - M.x);
+        let diffY= abs(penultimateComCoords[1] - M.y);
+
+        let isClosingCommand = penultimateType === 'L' && 
+        diffX<tolerance && 
+        diffY<tolerance;
+
+        if (removeFinalLineto && isClosingCommand) {
+            pathData.splice(len - 2, 1);
+        }
+        pathDataNew.push(...pathData);
+
+        console.log('pathDataToTopLeft2', pathDataNew );
+
+        return pathDataNew
+    }
+
+    /**
+     * avoids starting points in the middle of 2 smooth curves
+     * can replace linetos with closepaths
+     */
+
+    function pathDataToTopLeft(pathData, removeFinalLineto = false, startToTop = true) {
+
+        let pathDataNew = [];
+
+        // move starting point to first lineto
+
+        new Set([...pathData.map(com => com.type)]);
+
+        let len = pathData.length;
+
+        let M = { x: pathData[0].values[0], y: pathData[0].values[1] };
+        let isClosed = pathData[len - 1].type.toLowerCase() === 'z';
+
+        // we can't change starting point for non closed paths
+        if (!isClosed) {
+            return pathData
+        }
+        let newIndex = 0;
+
+        let p0 = { x: 0, y: 0 };
+
+        if (startToTop) {
+
+            let indices = [];
+            for (let i = 0, len = pathData.length; i < len; i++) {
+                let com = pathData[i];
+                let { type, values } = com;
+                if (values.length) {
+
+                    let valsL = values.slice(-2);
+                    let p = { x: valsL[0], y: valsL[1], dist: 0, index: 0 };
+
+                    // add square distance
+                    p.dist = getSquareDistance(p0, p);
+                    p.index = i;
+
+                    indices.push(p);
+
+                }
+            }
+
+            // find top most
+            indices = indices.sort((a, b) => a.dist - b.dist || a.y - b.y);
+            newIndex = indices[0].index;
+
+        }
+
+        // reorder 
+        pathData = shiftSvgStartingPoint(pathData, newIndex);
+        len = pathData.length;
+
+        // remove last lineto
+        let penultimateCom = pathData[len - 2];
+        let penultimateType = penultimateCom.type;
+        let penultimateComCoords = penultimateCom.values.slice(-2);
+
+        let isClosingCommand = penultimateType === 'L' && penultimateComCoords[0] === M.x && penultimateComCoords[1] === M.y;
+
+        if (removeFinalLineto && isClosingCommand) {
+            pathData.splice(len - 2, 1);
+        }
+        pathDataNew.push(...pathData);
+
+        return pathDataNew
     }
 
     /**
@@ -2050,103 +3103,304 @@
         return pathDataShorts;
     }
 
-    function getPotracePathData(pathList = [], scale = 1) {
+    function pathDataRemoveColinear(pathData, tolerance = 0.00001) {
 
-        let len = pathList.length;
-        let pathData = [];
+        let pathDataN = [pathData[0]];
+        let M = { x: pathData[0].values[0], y: pathData[0].values[1] };
+        let p0 = M;
+        let p = M;
 
-        for (let l = 0; l < len; l++) {
+        for (let c = 1, l = pathData.length; c < l; c++) {
 
-            // sub paths starting with ;M
-            let curve = pathList[l].curve;
-            let n = curve.n, coms;
-            pathData.push(
-                {
-                    type: 'M', values: [
-                        curve.c[(n - 1) * 3 + 2].x * scale,
-                        curve.c[(n - 1) * 3 + 2].y * scale
-                    ]
-                },
-            );
+            let com = pathData[c];
+            let comN = pathData[c + 1] || pathData[l - 1];
+            let p1 = comN.type === 'Z' ? M : { x: comN.values[comN.values.length - 2], y: comN.values[comN.values.length - 1] };
 
-            for (let i = 0; i < n; i++) {
-                let type = curve.tag[i];
-                if (type === "curve") {
-                    coms = [{
-                        type: 'C', values: [
-                            curve.c[i * 3].x * scale,
-                            curve.c[i * 3].y * scale,
-                            curve.c[i * 3 + 1].x * scale,
-                            curve.c[i * 3 + 1].y * scale,
-                            curve.c[i * 3 + 2].x * scale,
-                            curve.c[i * 3 + 2].y * scale
-                        ]
-                    }];
+            let { type, values } = com;
+            let valsL = values.slice(-2);
 
-                } else if (type === "corner") {
-                    coms = [
+            p = type !== 'Z' ? { x: valsL[0], y: valsL[1] } : M;
 
-                        {
-                            type: 'L', values: [
-                                curve.c[i * 3 + 1].x * scale,
-                                curve.c[i * 3 + 1].y * scale,
-                            ]
-                        },
-                        {
-                            type: 'L', values: [
-                                curve.c[i * 3 + 2].x * scale,
-                                curve.c[i * 3 + 2].y * scale,
-                            ]
-                        }
-                    ];
-                }
-                pathData.push(...coms);
+            let cpts = type === 'C' ?
+                [{ x: values[0], y: values[1] }, { x: values[2], y: values[3] }] :
+                (type === 'Q' ? [{ x: values[0], y: values[1] }] : []);
+
+            let area = abs(getPolygonArea([p0, ...cpts, p, p1]));
+
+            /**
+             * Check for perfectly flat
+             */
+
+            // update end point
+            p0 = p;
+
+            if (area < tolerance) {
+
+                continue;
             }
 
-            pathData.push({ type: 'Z', values: [] });
+            if (type === 'M') {
+                M = p;
+                p0 = M;
+            }
+
+            else if (type === 'Z') {
+                p0 = M;
+            }
+
+            // proceed and add command
+            pathDataN.push(com);
 
         }
 
-        return pathData
+        // add close path
+        pathDataN.push({ type: 'Z', values: [] });
+
+        return pathDataN;
 
     }
 
-    function getSVG(pathData, w, h, {
+    function fixPathData(pathData, {
+        addExtremes = false,
+        sortSubPaths = true,
+        sortCommands = true,
+        fixFlatCubics = true,
+        removeCollinear = true
+    } = {}) {
+
+        let pathDataN = [];
+
+        // find subpaths
+        let subPathArr = splitSubpaths(pathData);
+
+        // add more data for bbox
+        let subPathData = subPathArr.map(pathData => {
+            return { pathData, bb: {}, tolerance: 0 }
+        });
+
+        let len = subPathData.length;
+
+        for (let i = 0; i < len; i++) {
+
+            let { pathData } = subPathData[i];
+
+            // add extremes - better bbox
+            if (addExtremes) {
+                let verbose = true;
+                pathData = addExtremePoints(pathData, verbose);
+                subPathData[i].pathData = pathData;
+            }
+
+            /**
+             * get bbox
+             */
+            let pathPoly = getPathDataVertices(pathData);
+            let bb = getPolyBBox(pathPoly);
+            let { width, height } = bb;
+
+            // path global tolerance
+            subPathData[i].tolerance = (width + height) / 2 * 0.001;
+
+            // subpath bbox
+            subPathData[i].bb = bb;
+
+        }
+
+        /**
+         * get total bounding box of compound path
+         */
+        let xArr = subPathData.map(sub => [sub.bb.x, sub.bb.right]).flat();
+        let yArr = subPathData.map(sub => [sub.bb.y, sub.bb.bottom]).flat();
+
+        let left = min(...xArr);
+        let right = max(...xArr);
+
+        let top = min(...yArr);
+        let bottom = max(...yArr);
+
+        let width = right - left;
+        let height = bottom - top;
+
+        let bb = {
+            x: left,
+            y: top,
+            left,
+            top,
+            right,
+            bottom,
+            width,
+            height
+        };
+
+        /**
+         * sort subpaths
+         * to top-left
+         * potrace messes this up
+         */
+        let pt0 = { x: bb.x, y: bb.y };
+        subPathData.forEach((sub, s) => {
+            // distance to top left
+            let pt = { x: sub.bb.x, y: sub.bb.y };
+            let dist = getSquareDistance(pt0, pt);
+            sub.dist = dist;
+
+        });
+
+        subPathData.sort((a, b) => a.dist - b.dist || a.bb.y - b.bb.y);
+
+        /**
+         * remove zero length linetos
+         * fix extremes close 
+         * to adjacent beziers
+         */
+
+        for (let i = 0; i < len; i++) {
+
+            let { pathData, tolerance, bb } = subPathData[i];
+
+            // remove zero linetos
+            pathData = removeZeroLengthLinetos(pathData);
+
+            // sort to top left
+            pathData = pathDataToTopLeft2(pathData, { bb });
+
+            pathData = pathDataRemoveColinear(pathData);
+
+            pathDataN.push(...pathData);
+
+        }
+
+        pathDataN = convertPathData(pathDataN);
+
+        return pathDataN;
+
+    }
+
+    function removeZeroLengthLinetos(pathData) {
+
+        let M = { x: pathData[0].values[0], y: pathData[0].values[1] };
+        let p0 = M;
+        let p = p0;
+
+        let pathDataN = [pathData[0]];
+
+        for (let c = 1, l = pathData.length; c < l; c++) {
+            let com = pathData[c];
+            let { type, values, t = 0 } = com;
+
+            let valsL = values.slice(-2);
+            p = { x: valsL[0], y: valsL[1] };
+
+            if (type === 'L' && p.x === p0.x && p.y === p0.y) {
+
+                continue
+            }
+
+            pathDataN.push(com);
+            p0 = p;
+        }
+
+        return pathDataN
+
+    }
+
+    /**
+    * serialize pathData array to 
+    * d attribute string 
+    */
+    function pathDataToD(pathData, decimals = -1, minify = false) {
+        // implicit l command
+        if (pathData[1].type === "l" && minify) {
+            pathData[0].type = "m";
+        }
+        let d = `${pathData[0].type}${pathData[0].values.join(" ")}`;
+
+        for (let i = 1; i < pathData.length; i++) {
+            let com0 = pathData[i - 1];
+            let com = pathData[i];
+
+            let type = (com0.type === com.type && minify) ?
+                " " : (
+                    (com0.type === "m" && com.type === "l") ||
+                    (com0.type === "M" && com.type === "l") ||
+                    (com0.type === "M" && com.type === "L")
+                ) && minify ?
+                    " " : com.type;
+
+            // round
+            if (com.values.length && decimals > -1) {
+                com.values = com.values.map(val => { return +val.toFixed(decimals) });
+            }
+            d += `${type}${com.values.join(" ")}`;
+        }
+
+        if (minify) {
+            d = d
+                .replaceAll(" 0.", " .")
+                .replaceAll(" -", "-")
+                .replaceAll("-0.", "-.")
+                .replace(/\s+([mlcsqtahvz])/gi, "$1")
+                .replaceAll("Z", "z");
+        }
+
+        return d;
+    }
+
+    function getSVG(pathDataArray, width, height, {
         toRelative = true,
         toShorthands = true,
         decimals = 3,
         addDimensions = false,
+        optimize = false
     } = {}) {
 
-        w = ceil(w);
-        h = ceil(h);
-
-        /**
-         * decompose compound path
-         */
-        let pathDataCloned = JSON.parse(JSON.stringify(pathData));
-
-        let pathDataSorted = reorderPathData(pathDataCloned);
-        let pathDataArray = splitSubpaths(pathDataSorted);
+        width = ceil(width);
+        height = ceil(height);
 
         /**
          * analyze subpaths
-         * get bounding boxes 
          * and poly approximation for 
          * overlap checking
          */
 
         let subPathArr = [];
         let l = pathDataArray.length;
+        let includeCpts = true;
 
         for (let i = 0; i < l; i++) {
             let pathData = pathDataArray[i];
 
-            // add extreme points for better poly approximation
-            let pathDataExt = addExtremePoints(JSON.parse(JSON.stringify(pathData)));
-            let bb = getPathDataBBox(pathDataExt);
-            let poly = getPathDataVertices(pathDataExt);
+            // we already know the bbox from Potrace
+            let bb = pathData[0].bb;
+
+            // include control points for better overlapping approximation
+            let poly = getPathDataVertices(pathData, includeCpts);
             subPathArr.push({ pathData, bb, poly, includes: [] });
+        }
+
+        /**
+         * optimize:
+         * starting point
+         * remove colinear/flat segments
+         */
+
+        if (optimize) {
+            for (let i = 0, l = subPathArr.length; i < l; i++) {
+
+                let { pathData, bb } = subPathArr[i];
+
+                // remove zero length linetos
+                pathData = removeZeroLengthLinetos(pathData);
+
+                // sort to top left
+                pathData = pathDataToTopLeft(pathData);
+
+                // remove colinear/flat
+                pathData = pathDataRemoveColinear(pathData);
+
+                // update
+                subPathArr[i].pathData = pathData;
+            }
         }
 
         /**
@@ -2200,1120 +3454,60 @@
             let { includes } = sub;
 
             includes.forEach(s => {
-                let sub1 = subPathArr[s].pathData;
-                if (sub1.length) {
-                    subPathArr[i].pathData.push(...sub1);
+                let pathData = subPathArr[s].pathData;
+                if (pathData.length) {
+                    subPathArr[i].pathData.push(...pathData);
                     subPathArr[s].pathData = [];
                 }
             });
         }
 
-        // remove empty els
+        // remove empty els due to grouping
         subPathArr = subPathArr.filter(sub => sub.pathData.length);
 
-        // Add explicit dimension attributes sometimes reasonable for graphic editors
-        let dimAtts = addDimensions ? `width="${w}" height="${h}" ` : '';
+        // clone sub pathdata array
+        let pathDataArr = JSON.parse(JSON.stringify(subPathArr)).map(pd => pd.pathData);
 
-        let svgSplit = `<svg viewBox="0 0 ${w} ${h}" ${dimAtts}xmlns="http://www.w3.org/2000/svg">`;
+        // flat path data 
+        let pathData = JSON.parse(JSON.stringify(pathDataArr)).flat();
+
+        // Add explicit dimension attributes sometimes reasonable for graphic editors
+        let dimAtts = addDimensions ? `width="${width}" height="${height}" ` : '';
+
+        let svgSplit = `<svg viewBox="0 0 ${width} ${height}" ${dimAtts}xmlns="http://www.w3.org/2000/svg">`;
         let dArr = [];
         subPathArr.forEach(sub => {
             let { pathData } = sub;
 
             try {
-                if (toRelative || toShorthands || decimals != -1) pathData = convertPathData(pathData, { toRelative, toShorthands, decimals });
+                if (toRelative || toShorthands || decimals != -1) {
+                    pathData = convertPathData(pathData, { toRelative, toShorthands, decimals });
+                }
                 let d = pathDataToD(pathData, decimals);
 
                 dArr.push(d);
                 svgSplit += `<path d="${d}"/>`;
 
             } catch {
-                console.log('catch', pathData);
+                console.warn('catch pathdata could not be parsed', pathData);
             }
         });
 
         svgSplit += '</svg>';
 
         /**
+         * combined pathData-  single path
          * optimize pathData
          * apply shorthands where possible
          * convert to relative commnds
          * round
          */
+
         if (toRelative || toShorthands || decimals != -1) pathData = convertPathData(pathData, { toRelative, toShorthands, decimals });
-
         let d = pathDataToD(pathData, decimals);
+        let svg = `<svg viewBox="0 0 ${width} ${height}" ${dimAtts}xmlns="http://www.w3.org/2000/svg"><path d="${d}"/></svg>`;
 
-        let svg = `<svg viewBox="0 0 ${w} ${h}" ${dimAtts}xmlns="http://www.w3.org/2000/svg"><path d="${d}"/></svg>`;
-
-        return { svg, d, svgSplit, dArr, pathData }
-
-    }
-
-    /**
-    * serialize pathData array to 
-    * d attribute string 
-    */
-    function pathDataToD(pathData, decimals = -1, minify = false) {
-        // implicit l command
-        if (pathData[1].type === "l" && minify) {
-            pathData[0].type = "m";
-        }
-        let d = `${pathData[0].type}${pathData[0].values.join(" ")}`;
-
-        for (let i = 1; i < pathData.length; i++) {
-            let com0 = pathData[i - 1];
-            let com = pathData[i];
-
-            let type = (com0.type === com.type && minify) ?
-                " " : (
-                    (com0.type === "m" && com.type === "l") ||
-                    (com0.type === "M" && com.type === "l") ||
-                    (com0.type === "M" && com.type === "L")
-                ) && minify ?
-                    " " : com.type;
-
-            // round
-            if (com.values.length && decimals > -1) {
-                com.values = com.values.map(val => { return +val.toFixed(decimals) });
-            }
-            d += `${type}${com.values.join(" ")}`;
-        }
-
-        if (minify) {
-            d = d
-                .replaceAll(" 0.", " .")
-                .replaceAll(" -", "-")
-                .replaceAll("-0.", "-.")
-                .replace(/\s+([mlcsqtahvz])/gi, "$1")
-                .replaceAll("Z", "z");
-        }
-
-        return d;
-    }
-
-    /**
-     * core tracing function
-     * expects a 1-bit black and white 
-     * image data array
-     * returns potrace internal pathList obect
-     */
-    function potraceGetPathList(bmp, {
-        turnpolicy = "majority",
-        turdsize = 1,
-        optcurve = true,
-        alphamax = 1,
-        opttolerance = 1
-    } = {}) {
-
-        /**
-         * processing
-         */
-
-        let pathlist = [];
-
-        function bmpToPathlist() {
-
-            let bmp1 = bmp.copy();
-            let currentPoint = { x: 0, y: 0 }, path;
-
-            function findNext(pt) {
-                let i = bmp1.w * pt.y + pt.x;
-                while (i < bmp1.size && bmp1.data[i] !== 1) {
-                    i++;
-                }
-                return i < bmp1.size && bmp1.index(i);
-            }
-
-            function majority(x, y) {
-                for (let i = 2; i < 5; i++) {
-                    let ct = 0;
-                    for (let a = -i + 1; a <= i - 1; a++) {
-                        ct += bmp1.at(x + a, y + i - 1) ? 1 : -1;
-                        ct += bmp1.at(x + i - 1, y + a - 1) ? 1 : -1;
-                        ct += bmp1.at(x + a - 1, y - i) ? 1 : -1;
-                        ct += bmp1.at(x - i, y + a) ? 1 : -1;
-                    }
-                    if (ct > 0) {
-                        return 1;
-                    } else if (ct < 0) {
-                        return 0;
-                    }
-                }
-                return 0;
-            }
-
-            function findPath(pt) {
-                let path = new Path(),
-                    x = pt.x, y = pt.y,
-                    dirx = 0, diry = 1, tmp;
-
-                path.sign = bmp.at(pt.x, pt.y) ? "+" : "-";
-
-                while (1) {
-
-                    path.pt.push({ x, y });
-
-                    if (x > path.maxX)
-                        path.maxX = x;
-                    if (x < path.minX)
-                        path.minX = x;
-                    if (y > path.maxY)
-                        path.maxY = y;
-                    if (y < path.minY)
-                        path.minY = y;
-                    path.len++;
-
-                    x += dirx;
-                    y += diry;
-                    path.area -= x * diry;
-
-                    if (x === pt.x && y === pt.y)
-                        break;
-
-                    let l = bmp1.at(x + (dirx + diry - 1) / 2, y + (diry - dirx - 1) / 2);
-                    let r = bmp1.at(x + (dirx - diry - 1) / 2, y + (diry + dirx - 1) / 2);
-
-                    if (r && !l) {
-                        if (turnpolicy === "right" ||
-                            (turnpolicy === "black" && path.sign === '+') ||
-                            (turnpolicy === "white" && path.sign === '-') ||
-                            (turnpolicy === "majority" && majority(x, y)) ||
-                            (turnpolicy === "minority" && !majority(x, y))) {
-                            tmp = dirx;
-                            dirx = -diry;
-                            diry = tmp;
-                        } else {
-                            tmp = dirx;
-                            dirx = diry;
-                            diry = -tmp;
-                        }
-                    } else if (r) {
-                        tmp = dirx;
-                        dirx = -diry;
-                        diry = tmp;
-                    } else if (!l) {
-                        tmp = dirx;
-                        dirx = diry;
-                        diry = -tmp;
-                    }
-                }
-
-                return path;
-            }
-
-            function xorPath(path) {
-                let y1 = path.pt[0].y,
-                    len = path.len,
-                    maxX, minY;
-                for (let i = 1; i < len; i++) {
-                    let x = path.pt[i].x;
-                    let y = path.pt[i].y;
-
-                    if (y !== y1) {
-                        minY = y1 < y ? y1 : y;
-                        maxX = path.maxX;
-                        for (let j = x; j < maxX; j++) {
-                            bmp1.flip(j, minY);
-                        }
-                        y1 = y;
-                    }
-                }
-            }
-
-            while (currentPoint = findNext(currentPoint)) {
-
-                path = findPath(currentPoint);
-                xorPath(path);
-
-                if (path.area > turdsize) {
-                    pathlist.push(path);
-                }
-            }
-
-            return pathlist;
-        }
-
-        function processPath() {
-
-            function Quad() {
-                this.data = [0, 0, 0, 0, 0, 0, 0, 0, 0];
-            }
-
-            Quad.prototype.at = function (x, y) {
-                return this.data[x * 3 + y];
-            };
-
-            function Sum(x, y, xy, x2, y2) {
-                this.x = x;
-                this.y = y;
-                this.xy = xy;
-                this.x2 = x2;
-                this.y2 = y2;
-            }
-
-            function mod(a, n) {
-                return a >= n ? a % n : a >= 0 ? a : n - 1 - (-1 - a) % n;
-            }
-
-            function xprod(p1, p2) {
-                return p1.x * p2.y - p1.y * p2.x;
-            }
-
-            function cyclic(a, b, c) {
-                if (a <= c) {
-                    return (a <= b && b < c);
-                } else {
-                    return (a <= b || b < c);
-                }
-            }
-
-            function sign(i) {
-                return i > 0 ? 1 : i < 0 ? -1 : 0;
-            }
-
-            function quadform(Q, w) {
-                let v = new Array(3), sum = 0;
-
-                v[0] = w.x;
-                v[1] = w.y;
-                v[2] = 1;
-
-                for (let i = 0; i < 3; i++) {
-                    for (let j = 0; j < 3; j++) {
-                        sum += v[i] * Q.at(i, j) * v[j];
-                    }
-                }
-                return sum;
-            }
-
-            function interval(lambda, a, b) {
-                return { x: a.x + lambda * (b.x - a.x), y: a.y + lambda * (b.y - a.y) }
-            }
-
-            function dorth_infty(p0, p2) {
-                return { x: -sign(p2.y - p0.y), y: sign(p2.x - p0.x) }
-            }
-
-            function ddenom(p0, p2) {
-                let r = dorth_infty(p0, p2);
-
-                return r.y * (p2.x - p0.x) - r.x * (p2.y - p0.y);
-            }
-
-            function getProd(type = '', p0 = {}, p1 = {}, p2 = {}, p3 = {},) {
-                let x1, x2, y1, y2;
-                if (type === 'cprod' || type === 'iprod1') {
-                    x1 = p1.x - p0.x;
-                    y1 = p1.y - p0.y;
-                    x2 = p3.x - p2.x;
-                    y2 = p3.y - p2.y;
-                } else {
-                    x1 = p1.x - p0.x;
-                    y1 = p1.y - p0.y;
-                    x2 = p2.x - p0.x;
-                    y2 = p2.y - p0.y;
-                }
-                return type === 'cprod' || type === 'dpara' ? x1 * y2 - x2 * y1 : x1 * x2 + y1 * y2;
-            }
-
-            function ddist(p, q) {
-                return sqrt((p.x - q.x) ** 2 + (p.y - q.y) ** 2);
-
-            }
-
-            function bezier(t, p0, p1, p2, p3) {
-                let s = 1 - t;
-                return { x: s * s * s * p0.x + 3 * (s * s * t) * p1.x + 3 * (t * t * s) * p2.x + t * t * t * p3.x, y: s * s * s * p0.y + 3 * (s * s * t) * p1.y + 3 * (t * t * s) * p2.y + t * t * t * p3.y };
-            }
-
-            function tangent(p0, p1, p2, p3, q0, q1) {
-
-                let A = getProd('cprod', p0, p1, q0, q1);
-                let B = getProd('cprod', p1, p2, q0, q1);
-                let C = getProd('cprod', p2, p3, q0, q1);
-
-                let a = A - 2 * B + C;
-                let b = -2 * A + 2 * B;
-                let c = A;
-                let d = b * b - 4 * a * c;
-
-                if (a === 0 || d < 0) {
-                    return -1;
-                }
-
-                let s = sqrt(d);
-                let r1 = (-b + s) / (2 * a);
-                let r2 = (-b - s) / (2 * a);
-
-                if (r1 >= 0 && r1 <= 1) {
-                    return r1;
-                } else if (r2 >= 0 && r2 <= 1) {
-                    return r2;
-                } else {
-                    return -1;
-                }
-            }
-
-            function calcSums(path) {
-
-                path.x0 = path.pt[0].x;
-                path.y0 = path.pt[0].y;
-
-                path.sums = [];
-                let s = path.sums;
-                s.push(new Sum(0, 0, 0, 0, 0));
-                for (let i = 0; i < path.len; i++) {
-                    let x = path.pt[i].x - path.x0;
-                    let y = path.pt[i].y - path.y0;
-                    s.push(new Sum(s[i].x + x, s[i].y + y, s[i].xy + x * y,
-                        s[i].x2 + x * x, s[i].y2 + y * y));
-                }
-            }
-
-            function calcLon(path) {
-
-                let n = path.len, pt = path.pt, dir,
-                    pivk = new Array(n),
-                    nc = new Array(n),
-                    ct = new Array(4);
-                path.lon = new Array(n);
-
-                let constraint = [{ x: 0, y: 0 }, { x: 0, y: 0 }],
-                    cur = { x: 0, y: 0 },
-                    off = { x: 0, y: 0 },
-                    dk = { x: 0, y: 0 },
-                    foundk;
-
-                let i, j, k1, a, b, c, d, k = 0;
-                for (i = n - 1; i >= 0; i--) {
-                    if (pt[i].x != pt[k].x && pt[i].y != pt[k].y) {
-                        k = i + 1;
-                    }
-                    nc[i] = k;
-                }
-
-                for (i = n - 1; i >= 0; i--) {
-                    ct[0] = ct[1] = ct[2] = ct[3] = 0;
-                    dir = (3 + 3 * (pt[mod(i + 1, n)].x - pt[i].x) +
-                        (pt[mod(i + 1, n)].y - pt[i].y)) / 2;
-                    ct[dir]++;
-
-                    constraint[0].x = 0;
-                    constraint[0].y = 0;
-                    constraint[1].x = 0;
-                    constraint[1].y = 0;
-
-                    k = nc[i];
-                    k1 = i;
-                    while (1) {
-                        foundk = 0;
-                        dir = (3 + 3 * sign(pt[k].x - pt[k1].x) +
-                            sign(pt[k].y - pt[k1].y)) / 2;
-                        ct[dir]++;
-
-                        if (ct[0] && ct[1] && ct[2] && ct[3]) {
-                            pivk[i] = k1;
-                            foundk = 1;
-                            break;
-                        }
-
-                        cur.x = pt[k].x - pt[i].x;
-                        cur.y = pt[k].y - pt[i].y;
-
-                        if (xprod(constraint[0], cur) < 0 || xprod(constraint[1], cur) > 0) {
-                            break;
-                        }
-
-                        if (abs(cur.x) <= 1 && abs(cur.y) <= 1) ; else {
-                            off.x = cur.x + ((cur.y >= 0 && (cur.y > 0 || cur.x < 0)) ? 1 : -1);
-                            off.y = cur.y + ((cur.x <= 0 && (cur.x < 0 || cur.y < 0)) ? 1 : -1);
-                            if (xprod(constraint[0], off) >= 0) {
-                                constraint[0].x = off.x;
-                                constraint[0].y = off.y;
-                            }
-                            off.x = cur.x + ((cur.y <= 0 && (cur.y < 0 || cur.x < 0)) ? 1 : -1);
-                            off.y = cur.y + ((cur.x >= 0 && (cur.x > 0 || cur.y < 0)) ? 1 : -1);
-                            if (xprod(constraint[1], off) <= 0) {
-                                constraint[1].x = off.x;
-                                constraint[1].y = off.y;
-                            }
-                        }
-                        k1 = k;
-                        k = nc[k1];
-                        if (!cyclic(k, i, k1)) {
-                            break;
-                        }
-                    }
-                    if (foundk === 0) {
-                        dk.x = sign(pt[k].x - pt[k1].x);
-                        dk.y = sign(pt[k].y - pt[k1].y);
-                        cur.x = pt[k1].x - pt[i].x;
-                        cur.y = pt[k1].y - pt[i].y;
-
-                        a = xprod(constraint[0], cur);
-                        b = xprod(constraint[0], dk);
-                        c = xprod(constraint[1], cur);
-                        d = xprod(constraint[1], dk);
-
-                        j = 10000000;
-                        if (b < 0) {
-                            j = floor(a / -b);
-                        }
-                        if (d > 0) {
-                            j = min(j, floor(-c / d));
-                        }
-                        pivk[i] = mod(k1 + j, n);
-                    }
-                }
-
-                j = pivk[n - 1];
-                path.lon[n - 1] = j;
-                for (i = n - 2; i >= 0; i--) {
-                    if (cyclic(i + 1, pivk[i], j)) {
-                        j = pivk[i];
-                    }
-                    path.lon[i] = j;
-                }
-
-                for (i = n - 1; cyclic(mod(i + 1, n), j, path.lon[i]); i--) {
-                    path.lon[i] = j;
-                }
-            }
-
-            function bestPolygon(path) {
-
-                function penalty3(path, i, j) {
-
-                    let n = path.len, pt = path.pt, sums = path.sums;
-                    let x, y, xy, x2, y2,
-                        k, a, b, c, s,
-                        px, py, ex, ey,
-                        r = 0;
-                    if (j >= n) {
-                        j -= n;
-                        r = 1;
-                    }
-
-                    if (r === 0) {
-                        x = sums[j + 1].x - sums[i].x;
-                        y = sums[j + 1].y - sums[i].y;
-                        x2 = sums[j + 1].x2 - sums[i].x2;
-                        xy = sums[j + 1].xy - sums[i].xy;
-                        y2 = sums[j + 1].y2 - sums[i].y2;
-                        k = j + 1 - i;
-                    } else {
-                        x = sums[j + 1].x - sums[i].x + sums[n].x;
-                        y = sums[j + 1].y - sums[i].y + sums[n].y;
-                        x2 = sums[j + 1].x2 - sums[i].x2 + sums[n].x2;
-                        xy = sums[j + 1].xy - sums[i].xy + sums[n].xy;
-                        y2 = sums[j + 1].y2 - sums[i].y2 + sums[n].y2;
-                        k = j + 1 - i + n;
-                    }
-
-                    px = (pt[i].x + pt[j].x) / 2.0 - pt[0].x;
-                    py = (pt[i].y + pt[j].y) / 2.0 - pt[0].y;
-                    ey = (pt[j].x - pt[i].x);
-                    ex = -(pt[j].y - pt[i].y);
-
-                    a = ((x2 - 2 * x * px) / k + px * px);
-                    b = ((xy - x * py - y * px) / k + px * py);
-                    c = ((y2 - 2 * y * py) / k + py * py);
-
-                    s = ex * ex * a + 2 * ex * ey * b + ey * ey * c;
-
-                    return sqrt(s);
-                }
-
-                let i, j, m, k,
-                    n = path.len,
-                    pen = new Array(n + 1),
-                    prev = new Array(n + 1),
-                    clip0 = new Array(n),
-                    clip1 = new Array(n + 1),
-                    seg0 = new Array(n + 1),
-                    seg1 = new Array(n + 1),
-                    thispen, best, c;
-
-                for (i = 0; i < n; i++) {
-                    c = mod(path.lon[mod(i - 1, n)] - 1, n);
-                    if (c == i) {
-                        c = mod(i + 1, n);
-                    }
-                    if (c < i) {
-                        clip0[i] = n;
-                    } else {
-                        clip0[i] = c;
-                    }
-                }
-
-                j = 1;
-                for (i = 0; i < n; i++) {
-                    while (j <= clip0[i]) {
-                        clip1[j] = i;
-                        j++;
-                    }
-                }
-
-                i = 0;
-                for (j = 0; i < n; j++) {
-                    seg0[j] = i;
-                    i = clip0[i];
-                }
-                seg0[j] = n;
-                m = j;
-
-                i = n;
-                for (j = m; j > 0; j--) {
-                    seg1[j] = i;
-                    i = clip1[i];
-                }
-                seg1[0] = 0;
-
-                pen[0] = 0;
-                for (j = 1; j <= m; j++) {
-                    for (i = seg1[j]; i <= seg0[j]; i++) {
-                        best = -1;
-                        for (k = seg0[j - 1]; k >= clip1[i]; k--) {
-                            thispen = penalty3(path, k, i) + pen[k];
-                            if (best < 0 || thispen < best) {
-                                prev[i] = k;
-                                best = thispen;
-                            }
-                        }
-                        pen[i] = best;
-                    }
-                }
-                path.m = m;
-                path.po = new Array(m);
-
-                for (i = n, j = m - 1; i > 0; j--) {
-                    i = prev[i];
-                    path.po[j] = i;
-                }
-
-            }
-
-            function adjustVertices(path) {
-
-                function pointslope(path, i, j, ctr, dir) {
-
-                    let n = path.len, sums = path.sums,
-                        x, y, x2, xy, y2,
-                        k, a, b, c, lambda2, l, r = 0;
-
-                    while (j >= n) {
-                        j -= n;
-                        r += 1;
-                    }
-                    while (i >= n) {
-                        i -= n;
-                        r -= 1;
-                    }
-                    while (j < 0) {
-                        j += n;
-                        r -= 1;
-                    }
-                    while (i < 0) {
-                        i += n;
-                        r += 1;
-                    }
-
-                    x = sums[j + 1].x - sums[i].x + r * sums[n].x;
-                    y = sums[j + 1].y - sums[i].y + r * sums[n].y;
-                    x2 = sums[j + 1].x2 - sums[i].x2 + r * sums[n].x2;
-                    xy = sums[j + 1].xy - sums[i].xy + r * sums[n].xy;
-                    y2 = sums[j + 1].y2 - sums[i].y2 + r * sums[n].y2;
-                    k = j + 1 - i + r * n;
-
-                    ctr.x = x / k;
-                    ctr.y = y / k;
-
-                    a = (x2 - x * x / k) / k;
-                    b = (xy - x * y / k) / k;
-                    c = (y2 - y * y / k) / k;
-
-                    lambda2 = (a + c + sqrt((a - c) * (a - c) + 4 * b * b)) / 2;
-
-                    a -= lambda2;
-                    c -= lambda2;
-
-                    if (abs(a) >= abs(c)) {
-                        l = sqrt(a * a + b * b);
-                        if (l !== 0) {
-                            dir.x = -b / l;
-                            dir.y = a / l;
-                        }
-                    } else {
-                        l = sqrt(c * c + b * b);
-                        if (l !== 0) {
-                            dir.x = -c / l;
-                            dir.y = b / l;
-                        }
-                    }
-                    if (l === 0) {
-                        dir.x = dir.y = 0;
-                    }
-                }
-
-                let m = path.m, po = path.po, n = path.len, pt = path.pt,
-                    x0 = path.x0, y0 = path.y0,
-                    ctr = new Array(m), dir = new Array(m),
-                    q = new Array(m),
-                    v = new Array(3), d, i, j, k, l,
-                    s = { x: 0, y: 0 };
-
-                path.curve = new Curve(m);
-
-                for (i = 0; i < m; i++) {
-                    j = po[mod(i + 1, m)];
-                    j = mod(j - po[i], n) + po[i];
-                    ctr[i] = { x: 0, y: 0 };
-                    dir[i] = { x: 0, y: 0 };
-                    pointslope(path, po[i], j, ctr[i], dir[i]);
-                }
-
-                for (i = 0; i < m; i++) {
-                    q[i] = new Quad();
-                    d = dir[i].x * dir[i].x + dir[i].y * dir[i].y;
-                    if (d === 0.0) {
-                        for (j = 0; j < 3; j++) {
-                            for (k = 0; k < 3; k++) {
-                                q[i].data[j * 3 + k] = 0;
-                            }
-                        }
-                    } else {
-                        v[0] = dir[i].y;
-                        v[1] = -dir[i].x;
-                        v[2] = - v[1] * ctr[i].y - v[0] * ctr[i].x;
-                        for (l = 0; l < 3; l++) {
-                            for (k = 0; k < 3; k++) {
-                                q[i].data[l * 3 + k] = v[l] * v[k] / d;
-                            }
-                        }
-                    }
-                }
-
-                let Q, w, dx, dy, det, min, cand, xmin, ymin, z;
-                for (i = 0; i < m; i++) {
-                    Q = new Quad();
-                    w = { x: 0, y: 0 };
-                    s.x = pt[po[i]].x - x0;
-                    s.y = pt[po[i]].y - y0;
-
-                    j = mod(i - 1, m);
-
-                    for (l = 0; l < 3; l++) {
-                        for (k = 0; k < 3; k++) {
-                            Q.data[l * 3 + k] = q[j].at(l, k) + q[i].at(l, k);
-                        }
-                    }
-
-                    while (1) {
-
-                        det = Q.at(0, 0) * Q.at(1, 1) - Q.at(0, 1) * Q.at(1, 0);
-                        if (det !== 0.0) {
-                            w.x = (-Q.at(0, 2) * Q.at(1, 1) + Q.at(1, 2) * Q.at(0, 1)) / det;
-                            w.y = (Q.at(0, 2) * Q.at(1, 0) - Q.at(1, 2) * Q.at(0, 0)) / det;
-                            break;
-                        }
-
-                        if (Q.at(0, 0) > Q.at(1, 1)) {
-                            v[0] = -Q.at(0, 1);
-                            v[1] = Q.at(0, 0);
-                        } else if (Q.at(1, 1)) {
-                            v[0] = -Q.at(1, 1);
-                            v[1] = Q.at(1, 0);
-                        } else {
-                            v[0] = 1;
-                            v[1] = 0;
-                        }
-                        d = v[0] * v[0] + v[1] * v[1];
-                        v[2] = - v[1] * s.y - v[0] * s.x;
-                        for (l = 0; l < 3; l++) {
-                            for (k = 0; k < 3; k++) {
-                                Q.data[l * 3 + k] += v[l] * v[k] / d;
-                            }
-                        }
-                    }
-                    dx = abs(w.x - s.x);
-                    dy = abs(w.y - s.y);
-                    if (dx <= 0.5 && dy <= 0.5) {
-                        path.curve.vertex[i] = { x: w.x + x0, y: w.y + y0 };
-                        continue;
-                    }
-
-                    min = quadform(Q, s);
-                    xmin = s.x;
-                    ymin = s.y;
-
-                    if (Q.at(0, 0) !== 0.0) {
-                        for (z = 0; z < 2; z++) {
-                            w.y = s.y - 0.5 + z;
-                            w.x = - (Q.at(0, 1) * w.y + Q.at(0, 2)) / Q.at(0, 0);
-                            dx = abs(w.x - s.x);
-                            cand = quadform(Q, w);
-                            if (dx <= 0.5 && cand < min) {
-                                min = cand;
-                                xmin = w.x;
-                                ymin = w.y;
-                            }
-                        }
-                    }
-
-                    if (Q.at(1, 1) !== 0.0) {
-                        for (z = 0; z < 2; z++) {
-                            w.x = s.x - 0.5 + z;
-                            w.y = - (Q.at(1, 0) * w.x + Q.at(1, 2)) / Q.at(1, 1);
-                            dy = abs(w.y - s.y);
-                            cand = quadform(Q, w);
-                            if (dy <= 0.5 && cand < min) {
-                                min = cand;
-                                xmin = w.x;
-                                ymin = w.y;
-                            }
-                        }
-                    }
-
-                    for (l = 0; l < 2; l++) {
-                        for (k = 0; k < 2; k++) {
-                            w.x = s.x - 0.5 + l;
-                            w.y = s.y - 0.5 + k;
-                            cand = quadform(Q, w);
-                            if (cand < min) {
-                                min = cand;
-                                xmin = w.x;
-                                ymin = w.y;
-                            }
-                        }
-                    }
-                    path.curve.vertex[i] = { x: xmin + x0, y: ymin + y0 };
-                }
-            }
-
-            function reverse(path) {
-                let curve = path.curve, m = curve.n, v = curve.vertex, i, j, tmp;
-
-                for (i = 0, j = m - 1; i < j; i++, j--) {
-                    tmp = v[i];
-                    v[i] = v[j];
-                    v[j] = tmp;
-                }
-            }
-
-            function smooth(path) {
-                let m = path.curve.n, curve = path.curve;
-
-                let i, j, k, dd, denom, alpha,
-                    p2, p3, p4;
-
-                for (i = 0; i < m; i++) {
-                    j = mod(i + 1, m);
-                    k = mod(i + 2, m);
-                    p4 = interval(1 / 2.0, curve.vertex[k], curve.vertex[j]);
-
-                    denom = ddenom(curve.vertex[i], curve.vertex[k]);
-                    if (denom !== 0.0) {
-                        dd = getProd('dpara', curve.vertex[i], curve.vertex[j], curve.vertex[k]) / denom;
-                        dd = abs(dd);
-                        alpha = dd > 1 ? (1 - 1.0 / dd) : 0;
-                        alpha = alpha / 0.75;
-                    } else {
-                        alpha = 4 / 3.0;
-                    }
-                    curve.alpha0[j] = alpha;
-
-                    if (alpha >= alphamax) {
-                        curve.tag[j] = "corner";
-                        curve.c[3 * j + 1] = curve.vertex[j];
-                        curve.c[3 * j + 2] = p4;
-                    } else {
-                        if (alpha < 0.55) {
-                            alpha = 0.55;
-                        } else if (alpha > 1) {
-                            alpha = 1;
-                        }
-                        p2 = interval(0.5 + 0.5 * alpha, curve.vertex[i], curve.vertex[j]);
-                        p3 = interval(0.5 + 0.5 * alpha, curve.vertex[k], curve.vertex[j]);
-                        curve.tag[j] = "curve";
-                        curve.c[3 * j + 0] = p2;
-                        curve.c[3 * j + 1] = p3;
-                        curve.c[3 * j + 2] = p4;
-                    }
-                    curve.alpha[j] = alpha;
-                    curve.beta[j] = 0.5;
-                }
-                curve.alphacurve = 1;
-            }
-
-            function optiCurve(path) {
-
-                function Opti() {
-                    this.pen = 0;
-                    this.c = [{ x: 0, y: 0 }, { x: 0, y: 0 }];
-                    this.t = 0;
-                    this.s = 0;
-                    this.alpha = 0;
-                }
-
-                function opti_penalty(path, i, j, res, opttolerance, convc, areac) {
-                    let m = path.curve.n, curve = path.curve, vertex = curve.vertex,
-                        k, k1, k2, conv, i1,
-                        area, alpha, d, d1, d2,
-                        p0, p1, p2, p3, pt,
-                        A, R, A1, A2, A3, A4,
-                        s, t;
-
-                    if (i == j) {
-                        return 1;
-                    }
-
-                    k = i;
-                    i1 = mod(i + 1, m);
-                    k1 = mod(k + 1, m);
-                    conv = convc[k1];
-                    if (conv === 0) {
-                        return 1;
-                    }
-                    d = ddist(vertex[i], vertex[i1]);
-                    for (k = k1; k != j; k = k1) {
-                        k1 = mod(k + 1, m);
-                        k2 = mod(k + 2, m);
-                        if (convc[k1] != conv) {
-                            return 1;
-                        }
-
-                        if (sign(getProd('cprod', vertex[i], vertex[i1], vertex[k1], vertex[k2])) !=
-                            conv) {
-                            return 1;
-                        }
-                        if (getProd('iprod1', vertex[i], vertex[i1], vertex[k1], vertex[k2]) <
-                            d * ddist(vertex[k1], vertex[k2]) * -0.999847695156) {
-                            return 1;
-                        }
-                    }
-
-                    p0 = curve.c[mod(i, m) * 3 + 2];
-                    p1 = vertex[mod(i + 1, m)];
-                    p2 = vertex[mod(j, m)];
-                    p3 = curve.c[mod(j, m) * 3 + 2];
-
-                    area = areac[j] - areac[i];
-                    area -= getProd('dpara', vertex[0], curve.c[i * 3 + 2], curve.c[j * 3 + 2]) / 2;
-                    if (i >= j) {
-                        area += areac[m];
-                    }
-
-                    A1 = getProd('dpara', p0, p1, p2);
-                    A2 = getProd('dpara', p0, p1, p3);
-                    A3 = getProd('dpara', p0, p2, p3);
-
-                    A4 = A1 + A3 - A2;
-
-                    if (A2 == A1) {
-                        return 1;
-                    }
-
-                    t = A3 / (A3 - A4);
-                    s = A2 / (A2 - A1);
-                    A = A2 * t / 2.0;
-
-                    if (A === 0.0) {
-                        return 1;
-                    }
-
-                    R = area / A;
-                    alpha = 2 - sqrt(4 - R / 0.3);
-
-                    res.c[0] = interval(t * alpha, p0, p1);
-                    res.c[1] = interval(s * alpha, p3, p2);
-                    res.alpha = alpha;
-                    res.t = t;
-                    res.s = s;
-
-                    p1 = { x: res.c[0].x, y: res.c[0].y };
-                    p2 = { x: res.c[1].x, y: res.c[1].y };
-
-                    res.pen = 0;
-
-                    for (k = mod(i + 1, m); k != j; k = k1) {
-                        k1 = mod(k + 1, m);
-                        t = tangent(p0, p1, p2, p3, vertex[k], vertex[k1]);
-                        if (t < -0.5) {
-                            return 1;
-                        }
-                        pt = bezier(t, p0, p1, p2, p3);
-                        d = ddist(vertex[k], vertex[k1]);
-                        if (d === 0.0) {
-                            return 1;
-                        }
-                        d1 = getProd('dpara', vertex[k], vertex[k1], pt) / d;
-                        if (abs(d1) > opttolerance) {
-                            return 1;
-                        }
-                        if (getProd('iprod', vertex[k], vertex[k1], pt) < 0 ||
-                            getProd('iprod', vertex[k1], vertex[k], pt) < 0) {
-                            return 1;
-                        }
-                        res.pen += d1 * d1;
-                    }
-
-                    for (k = i; k != j; k = k1) {
-                        k1 = mod(k + 1, m);
-                        t = tangent(p0, p1, p2, p3, curve.c[k * 3 + 2], curve.c[k1 * 3 + 2]);
-                        if (t < -0.5) {
-                            return 1;
-                        }
-                        pt = bezier(t, p0, p1, p2, p3);
-                        d = ddist(curve.c[k * 3 + 2], curve.c[k1 * 3 + 2]);
-                        if (d === 0.0) {
-                            return 1;
-                        }
-                        d1 = getProd('dpara', curve.c[k * 3 + 2], curve.c[k1 * 3 + 2], pt) / d;
-                        d2 = getProd('dpara', curve.c[k * 3 + 2], curve.c[k1 * 3 + 2], vertex[k1]) / d;
-                        d2 *= 0.75 * curve.alpha[k1];
-                        if (d2 < 0) {
-                            d1 = -d1;
-                            d2 = -d2;
-                        }
-                        if (d1 < d2 - opttolerance) {
-                            return 1;
-                        }
-                        if (d1 < d2) {
-                            res.pen += (d1 - d2) * (d1 - d2);
-                        }
-                    }
-
-                    return 0;
-                }
-
-                let curve = path.curve, m = curve.n, vert = curve.vertex,
-                    pt = new Array(m + 1),
-                    pen = new Array(m + 1),
-                    len = new Array(m + 1),
-                    opt = new Array(m + 1),
-                    om, i, j, r,
-                    o = new Opti(), p0,
-                    i1, area, alpha, ocurve,
-                    s, t;
-
-                let convc = new Array(m), areac = new Array(m + 1);
-
-                for (i = 0; i < m; i++) {
-                    if (curve.tag[i] == "curve") {
-                        convc[i] = sign(getProd('dpara', vert[mod(i - 1, m)], vert[i], vert[mod(i + 1, m)]));
-                    } else {
-                        convc[i] = 0;
-                    }
-                }
-
-                area = 0.0;
-                areac[0] = 0.0;
-                p0 = curve.vertex[0];
-                for (i = 0; i < m; i++) {
-                    i1 = mod(i + 1, m);
-                    if (curve.tag[i1] == "curve") {
-                        alpha = curve.alpha[i1];
-                        area += 0.3 * alpha * (4 - alpha) *
-                            getProd('dpara', curve.c[i * 3 + 2], vert[i1], curve.c[i1 * 3 + 2]) / 2;
-                        area += getProd('dpara', p0, curve.c[i * 3 + 2], curve.c[i1 * 3 + 2]) / 2;
-                    }
-                    areac[i + 1] = area;
-                }
-
-                pt[0] = -1;
-                pen[0] = 0;
-                len[0] = 0;
-
-                for (j = 1; j <= m; j++) {
-                    pt[j] = j - 1;
-                    pen[j] = pen[j - 1];
-                    len[j] = len[j - 1] + 1;
-
-                    for (i = j - 2; i >= 0; i--) {
-                        r = opti_penalty(path, i, mod(j, m), o, opttolerance, convc,
-                            areac);
-                        if (r) {
-                            break;
-                        }
-                        if (len[j] > len[i] + 1 ||
-                            (len[j] == len[i] + 1 && pen[j] > pen[i] + o.pen)) {
-                            pt[j] = i;
-                            pen[j] = pen[i] + o.pen;
-                            len[j] = len[i] + 1;
-                            opt[j] = o;
-                            o = new Opti();
-                        }
-                    }
-                }
-                om = len[m];
-                ocurve = new Curve(om);
-                s = new Array(om);
-                t = new Array(om);
-
-                j = m;
-                for (i = om - 1; i >= 0; i--) {
-                    if (pt[j] == j - 1) {
-                        ocurve.tag[i] = curve.tag[mod(j, m)];
-                        ocurve.c[i * 3 + 0] = curve.c[mod(j, m) * 3 + 0];
-                        ocurve.c[i * 3 + 1] = curve.c[mod(j, m) * 3 + 1];
-                        ocurve.c[i * 3 + 2] = curve.c[mod(j, m) * 3 + 2];
-                        ocurve.vertex[i] = curve.vertex[mod(j, m)];
-                        ocurve.alpha[i] = curve.alpha[mod(j, m)];
-                        ocurve.alpha0[i] = curve.alpha0[mod(j, m)];
-                        ocurve.beta[i] = curve.beta[mod(j, m)];
-                        s[i] = t[i] = 1.0;
-                    } else {
-                        ocurve.tag[i] = "curve";
-                        ocurve.c[i * 3 + 0] = opt[j].c[0];
-                        ocurve.c[i * 3 + 1] = opt[j].c[1];
-                        ocurve.c[i * 3 + 2] = curve.c[mod(j, m) * 3 + 2];
-                        ocurve.vertex[i] = interval(opt[j].s, curve.c[mod(j, m) * 3 + 2],
-                            vert[mod(j, m)]);
-                        ocurve.alpha[i] = opt[j].alpha;
-                        ocurve.alpha0[i] = opt[j].alpha;
-                        s[i] = opt[j].s;
-                        t[i] = opt[j].t;
-                    }
-                    j = pt[j];
-                }
-
-                for (i = 0; i < om; i++) {
-                    i1 = mod(i + 1, om);
-                    ocurve.beta[i] = s[i] / (s[i] + t[i1]);
-                }
-                ocurve.alphacurve = 1;
-                path.curve = ocurve;
-            }
-
-            for (let i = 0; i < pathlist.length; i++) {
-                let path = pathlist[i];
-
-                calcSums(path);
-                calcLon(path);
-                bestPolygon(path);
-                adjustVertices(path);
-
-                if (path.sign === "-") {
-                    reverse(path);
-                }
-
-                smooth(path);
-
-                if (optcurve) {
-                    optiCurve(path);
-                }
-            }
-
-        }
-
-        /**
-         * run tracing
-         */
-
-        bmpToPathlist();
-        processPath();
-
-        return pathlist;
+        return { width, height, commands: pathData.length, svg, d, svgSplit, dArr, pathData, pathDataArr }
 
     }
 
@@ -3326,7 +3520,11 @@
     };
 
     PotraceObj.prototype.getPathData = function () {
-        return this.pathData
+        return this.pathDataNorm
+    };
+
+    PotraceObj.prototype.getPathDataNorm = function () {
+        return this.pathDataNorm
     };
 
     PotraceObj.prototype.getD = function () {
@@ -3354,6 +3552,7 @@
 
         // svg processing
         crop = true,
+        optimize = false,
 
         addDimensions = true,
         toRelative = true,
@@ -3379,7 +3578,7 @@
          * get pathData (and stringified "d")
          * and svg markup
          */
-        let pathList = potraceGetPathList(bmp, { turnpolicy, turdsize, optcurve, alphamax, opttolerance, scaleAdjust, minSize, maxSize });
+        let {pathList, polygons} = potraceGetPathList(bmp, { turnpolicy, turdsize, optcurve, alphamax, opttolerance, scaleAdjust, minSize, maxSize });
 
         /**
          * get pathData (and stringified "d")
@@ -3390,23 +3589,17 @@
         scale = 1 / scaleAdjust;
 
         // get SVG data
-        let pathData = getPotracePathData(pathList, scale);
+        let pathDataArray= getPotracePathData(pathList, scale);
+        let pathData = pathDataArray.flat();
 
         if (!pathData.length) {
             throw new Error("Couldn't trace image")
 
         }
 
-        let pathDataNorm = JSON.parse(JSON.stringify(pathData));
-        let data = getSVG(pathData, width, height, { addDimensions, toRelative, toShorthands, decimals });
-        data.width = width;
-        data.height = height;
-        data.commands = pathData.length;
+        let data = getSVG(pathDataArray, width, height, { addDimensions, toRelative, toShorthands, optimize, decimals });
 
         data.scaleAdjust = scaleAdjust;
-
-        // absolute pathData
-        data.pathDataNorm = pathDataNorm;
 
         // return object
         return new PotraceObj(data);
@@ -3414,6 +3607,9 @@
     }
 
     if (typeof window !== 'undefined') {
+
+        window.pathDataToD = pathDataToD;
+
         window.PotracePlus = PotracePlus;
         window.svg2Canvas = svg2Canvas;
     }
@@ -3429,6 +3625,7 @@
     exports.ceil = ceil$1;
     exports.cos = cos$1;
     exports.exp = exp$1;
+    exports.fixPathData = fixPathData;
     exports.floor = floor$1;
     exports.hypot = hypot;
     exports.log = log$1;

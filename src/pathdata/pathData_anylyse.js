@@ -1,8 +1,8 @@
-import { splitSubpaths } from './pathData_split.js';
-import { getAngle, bezierhasExtreme, getPathDataVertices, svgArcToCenterParam, getSquareDistance, commandIsFlat } from "./geometry";
-import { getPolygonArea, getPathArea } from './geometry_area.js';
-import { getPolyBBox } from './geometry_bbox.js';
-import { renderPoint, renderPath } from "./visualize";
+import { splitSubpaths } from '../pathData_split.js';
+import { getAngle, bezierhasExtreme, getPathDataVertices, svgArcToCenterParam, getSquareDistance, commandIsFlat } from "../geometry.js";
+import { getPolygonArea, getPathArea } from '../geometry_area.js';
+import { getPolyBBox } from '../geometry_bbox.js';
+import { renderPoint, renderPath } from "../visualize.js";
 
 
 

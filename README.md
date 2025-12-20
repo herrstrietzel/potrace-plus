@@ -1,6 +1,6 @@
 # potrace-plus
 
-A javascript port of [Potrace](http://potrace.sourceforge.net).  
+A javascript port of Peter Selinger's [Potrace](http://potrace.sourceforge.net).  
 Based on [kilobtye's JS port](https://github.com/kilobtye/potrace)
 
 
@@ -13,6 +13,8 @@ Based on [kilobtye's JS port](https://github.com/kilobtye/potrace)
 * **filter** options for preprocessing
 * **cropping** to actual image boundaries 
 * **splitting** into separate paths – retaining compound shapes like "o"
+* **shape sorting** shapes are sorted from top-left to bottom-right
+* **SVG optimizations** colinear/flat segments are simplified
 
 
 ## Usage

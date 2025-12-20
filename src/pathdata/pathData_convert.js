@@ -10,7 +10,7 @@ import { renderPoint, renderPath } from "./visualize";
 import { getPolyBBox} from './geometry_bbox.js';
 */
 
-import { roundPathData } from './rounding.js';
+import { roundPathData } from '../rounding.js';
 
 
 export function convertPathData(pathData, {

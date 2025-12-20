@@ -1,7 +1,5 @@
 import { Curve, Path } from "./constructors";
-import { potracePathToPoly } from "./pathdata/pathData_from_potrace_Pathlist";
-//import { getPotracePathData, getSVG, pathlistToPolygon, potracePathToPoly } from "./potrace_svg";
-
+import { potracePathToPoly } from "./pathdata/polygon_from_potrace_Pathlist";
 
 /**
  * core tracing function
@@ -15,9 +13,8 @@ export function potraceGetPathList(bmp, {
     optcurve = true,
     alphamax = 1,
     opttolerance = 1,
-    getPolygon = false
+    getPolygon = true
 } = {}) {
-
 
     /**
      * processing
@@ -26,12 +23,12 @@ export function potraceGetPathList(bmp, {
     let pathList = [];
     let polygons = [];
 
-    function bmpToPathlist() {
+    const bmpToPathlist = () => {
 
         let bmp1 = bmp.copy()
         let currentPoint = { x: 0, y: 0 }, path;
 
-        function findNext(pt) {
+        const findNext = (pt) => {
             let i = bmp1.w * pt.y + pt.x;
             while (i < bmp1.size && bmp1.data[i] !== 1) {
                 i++;
@@ -39,7 +36,7 @@ export function potraceGetPathList(bmp, {
             return i < bmp1.size && bmp1.index(i);
         }
 
-        function majority(x, y) {
+        const majority = (x, y) => {
             for (let i = 2; i < 5; i++) {
                 let ct = 0;
                 for (let a = -i + 1; a <= i - 1; a++) {
@@ -57,7 +54,7 @@ export function potraceGetPathList(bmp, {
             return 0;
         }
 
-        function findPath(pt) {
+        const findPath = (pt) => {
             let path = new Path(),
                 x = pt.x, y = pt.y,
                 dirx = 0, diry = 1, tmp;
@@ -118,7 +115,7 @@ export function potraceGetPathList(bmp, {
             return path;
         }
 
-        function xorPath(path) {
+        const xorPath = (path) => {
             let y1 = path.pt[0].y,
                 len = path.len,
                 maxX, minY;
@@ -153,7 +150,7 @@ export function potraceGetPathList(bmp, {
     }
 
 
-    function processPath() {
+    const processPath = () => {
 
         function Quad() {
             this.data = [0, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -171,15 +168,15 @@ export function potraceGetPathList(bmp, {
             this.y2 = y2;
         }
 
-        function mod(a, n) {
+        const mod = (a, n) => {
             return a >= n ? a % n : a >= 0 ? a : n - 1 - (-1 - a) % n;
         }
 
-        function xprod(p1, p2) {
+        const xprod = (p1, p2) => {
             return p1.x * p2.y - p1.y * p2.x;
         }
 
-        function cyclic(a, b, c) {
+        const cyclic = (a, b, c) => {
             if (a <= c) {
                 return (a <= b && b < c);
             } else {
@@ -187,11 +184,11 @@ export function potraceGetPathList(bmp, {
             }
         }
 
-        function sign(i) {
+        const sign = (i) => {
             return i > 0 ? 1 : i < 0 ? -1 : 0;
         }
 
-        function quadform(Q, w) {
+        const quadform = (Q, w) => {
             let v = new Array(3), sum = 0;
 
             v[0] = w.x;
@@ -206,22 +203,20 @@ export function potraceGetPathList(bmp, {
             return sum;
         }
 
-        function interval(lambda, a, b) {
+        const interval = (lambda, a, b) => {
             return { x: a.x + lambda * (b.x - a.x), y: a.y + lambda * (b.y - a.y) }
         }
 
-        function dorth_infty(p0, p2) {
+        const dorth_infty = (p0, p2) => {
             return { x: -sign(p2.y - p0.y), y: sign(p2.x - p0.x) }
         }
 
-        function ddenom(p0, p2) {
+        const ddenom = (p0, p2) => {
             let r = dorth_infty(p0, p2);
-
             return r.y * (p2.x - p0.x) - r.x * (p2.y - p0.y);
         }
 
-
-        function getProd(type = '', p0 = {}, p1 = {}, p2 = {}, p3 = {},) {
+        const getProd = (type = '', p0 = {}, p1 = {}, p2 = {}, p3 = {}) => {
             let x1, x2, y1, y2;
             if (type === 'cprod' || type === 'iprod1') {
                 x1 = p1.x - p0.x;
@@ -238,17 +233,17 @@ export function potraceGetPathList(bmp, {
         }
 
 
-        function ddist(p, q) {
+        const ddist = (p, q) => {
             return Math.sqrt((p.x - q.x) ** 2 + (p.y - q.y) ** 2);
             //return (p.x - q.x) ** 2 + (p.y - q.y) ** 2;
         }
 
-        function bezier(t, p0, p1, p2, p3) {
+        const bezier = (t, p0, p1, p2, p3) => {
             let s = 1 - t;
             return { x: s * s * s * p0.x + 3 * (s * s * t) * p1.x + 3 * (t * t * s) * p2.x + t * t * t * p3.x, y: s * s * s * p0.y + 3 * (s * s * t) * p1.y + 3 * (t * t * s) * p2.y + t * t * t * p3.y };
         }
 
-        function tangent(p0, p1, p2, p3, q0, q1) {
+        const tangent = (p0, p1, p2, p3, q0, q1) => {
 
             let A = getProd('cprod', p0, p1, q0, q1);
             let B = getProd('cprod', p1, p2, q0, q1);
@@ -276,7 +271,7 @@ export function potraceGetPathList(bmp, {
             }
         }
 
-        function calcSums(path) {
+        const calcSums = (path) => {
 
             path.x0 = path.pt[0].x;
             path.y0 = path.pt[0].y;
@@ -292,7 +287,7 @@ export function potraceGetPathList(bmp, {
             }
         }
 
-        function calcLon(path) {
+        const calcLon = (path) => {
 
             let n = path.len, pt = path.pt, dir,
                 pivk = new Array(n),
@@ -406,9 +401,9 @@ export function potraceGetPathList(bmp, {
         }
 
 
-        function bestPolygon(path) {
+        const bestPolygon = (path) => {
 
-            function penalty3(path, i, j) {
+            const penalty3 = (path, i, j) => {
 
                 let n = path.len, pt = path.pt, sums = path.sums;
                 let x, y, xy, x2, y2,
@@ -519,9 +514,9 @@ export function potraceGetPathList(bmp, {
             //console.log('path.po', path);
         }
 
-        function adjustVertices(path) {
+        const adjustVertices = (path) => {
 
-            function pointslope(path, i, j, ctr, dir) {
+            const pointslope = (path, i, j, ctr, dir) => {
 
                 let n = path.len, sums = path.sums,
                     x, y, x2, xy, y2,
@@ -716,7 +711,7 @@ export function potraceGetPathList(bmp, {
             }
         }
 
-        function reverse(path) {
+        const reverse = (path) => {
             let curve = path.curve, m = curve.n, v = curve.vertex, i, j, tmp;
 
             for (i = 0, j = m - 1; i < j; i++, j--) {
@@ -726,7 +721,7 @@ export function potraceGetPathList(bmp, {
             }
         }
 
-        function smooth(path) {
+        const smooth = (path) => {
             let m = path.curve.n, curve = path.curve;
 
             let i, j, k, dd, denom, alpha,
@@ -773,7 +768,7 @@ export function potraceGetPathList(bmp, {
 
 
         // start opt
-        function optiCurve(path) {
+        const optiCurve = (path) => {
 
             function Opti() {
                 this.pen = 0;
@@ -783,7 +778,7 @@ export function potraceGetPathList(bmp, {
                 this.alpha = 0;
             }
 
-            function opti_penalty(path, i, j, res, opttolerance, convc, areac) {
+            const opti_penalty = (path, i, j, res, opttolerance, convc, areac) => {
                 let m = path.curve.n, curve = path.curve, vertex = curve.vertex,
                     k, k1, k2, conv, i1,
                     area, alpha, d, d1, d2,
@@ -837,17 +832,13 @@ export function potraceGetPathList(bmp, {
 
                 A4 = A1 + A3 - A2;
 
-                if (A2 == A1) {
-                    return 1;
-                }
+                if (A2 === A1) return 1;
 
                 t = A3 / (A3 - A4);
                 s = A2 / (A2 - A1);
                 A = A2 * t / 2.0;
 
-                if (A === 0) {
-                    return 1;
-                }
+                if (A === 0) return 1;
 
                 R = area / A;
                 alpha = 2 - Math.sqrt(4 - R / 0.3);
@@ -1047,19 +1038,16 @@ export function potraceGetPathList(bmp, {
     bmpToPathlist(bmp);
     processPath();
 
-    //console.log(pathlist, poly);
-
+    /*
     if (getPolygon) {
         let points = '';
         polygons.forEach(poly => {
             points += `M` + poly.map(pt => { return `${pt.x} ${pt.y}` }).join(' ')
         })
-
-       // console.log(points);
     }
+    */
 
 
-    //console.log(pathList);
     return { pathList, polygons };
 
 }

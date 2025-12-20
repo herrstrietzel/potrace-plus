@@ -14,11 +14,6 @@
     <link rel="stylesheet" href="demo/css/app1.css">
 
 
-    <!-- pdfkit helper -->
-    <script src="https://cdn.jsdelivr.net/npm/pdfkit@0.17.2/js/pdfkit.standalone.min.js" defer></script>
-    <!-- blob helper -->
-    <script src="https://github.com/devongovett/blob-stream/releases/download/v0.1.3/blob-stream.js" defer></script>
-
 
     <!-- ui helpers -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/enhance-inputs@0.2.0/dist/enhanceInputs.css">
@@ -159,8 +154,10 @@
         <main class="main --spn-ld-2 --spn-ld-3 scrollbar scroll-content pst-rlt">
 
             <div class="toolbar pst-fxd btt-0 rgh-0 pdd-1em">
-                <button class="btn-download btn-neg" id="btnPDF" type="button" data-icon="arrow-down-tray">PDF</button>
-                <a class="sr-only" id="btnDownload" href="#" download="potrace.pdf"></a>
+                <!-- 
+                    <button class="btn-download btn-neg" id="btnPDF" type="button" data-icon="arrow-down-tray">PDF</button>
+                -->
+                <a class="btn-download btn-neg" data-icon="arrow-down-tray" id="btnDownload" href="#" download="potrace.pdf">PDF</a>
 
                 <a class="btn-download a-non btn-neg" href="#" id="btnSvg" data-icon="arrow-down-tray"
                     download="potrace.svg">SVG</a>

@@ -1,6 +1,6 @@
 const {
-    abs: abs$1, acos: acos$1, asin: asin$1, atan: atan$1, atan2: atan2$1, ceil: ceil$1, cos: cos$1, exp: exp$1, floor: floor$1,
-    log: log$1, hypot, max: max$1, min: min$1, pow: pow$1, random: random$1, round: round$1, sin: sin$1, sqrt: sqrt$1, tan: tan$1, PI: PI$1
+    abs, acos, asin, atan, atan2, ceil, cos, exp, floor,
+    log, hypot, max, min, pow, random, round, sin, sqrt, tan, PI
 } = Math;
 
 function getBBox_fromImageData(imgData, stripWhite = true, cornerCheck = true, debug = false, target = null) {
@@ -679,87 +679,6 @@ function Curve(n) {
     this.beta = new Array(n);
 }
 
-function getPotracePathData(pathList = [], scale = 1) {
-
-    // sort pathList to top-left to bottom right
-    pathList.sort((a, b) => a.minX - b.minX || a.minY - b.minY);
-
-    let len = pathList.length;
-    let pathDataArr = [];
-
-    for (let l = 0; l < len; l++) {
-
-        let pathData = [];
-
-        // sub paths starting with ;M
-        let path = pathList[l];
-        let {curve, minX, maxX, minY, maxY, sign}  = path;
-
-        let bb = {
-            x: minX,
-            y: minY,
-            width: maxX-minX,
-            height: maxY-minY,
-        };
-
-        let n = curve.n, coms;
-
-        pathData.push(
-            {
-                type: 'M', values: [
-                    curve.c[(n - 1) * 3 + 2].x * scale,
-                    curve.c[(n - 1) * 3 + 2].y * scale
-                ],
-                // save bbbox to each M
-                bb,
-                cw: sign==='+' ? true : false
-            },
-        );
-
-        for (let i = 0; i < n; i++) {
-            let type = curve.tag[i];
-            if (type === "curve") {
-                coms = [{
-                    type: 'C', values: [
-                        curve.c[i * 3].x * scale,
-                        curve.c[i * 3].y * scale,
-                        curve.c[i * 3 + 1].x * scale,
-                        curve.c[i * 3 + 1].y * scale,
-                        curve.c[i * 3 + 2].x * scale,
-                        curve.c[i * 3 + 2].y * scale
-                    ]
-                }];
-
-            } else if (type === "corner") {
-                coms = [
-
-                    {
-                        type: 'L', values: [
-                            curve.c[i * 3 + 1].x * scale,
-                            curve.c[i * 3 + 1].y * scale,
-                        ]
-                    },
-                    {
-                        type: 'L', values: [
-                            curve.c[i * 3 + 2].x * scale,
-                            curve.c[i * 3 + 2].y * scale,
-                        ]
-                    }
-                ];
-            }
-            pathData.push(...coms);
-        }
-
-        pathData.push({ type: 'Z', values: [] });
-
-        pathDataArr.push(pathData);
-
-    }
-
-    return pathDataArr
-
-}
-
 function potracePathToPoly(path, scale = 1) {
 
     // sub paths starting with ;M
@@ -809,7 +728,7 @@ function potraceGetPathList(bmp, {
     optcurve = true,
     alphamax = 1,
     opttolerance = 1,
-    getPolygon = false
+    getPolygon = true
 } = {}) {
 
     /**
@@ -819,20 +738,20 @@ function potraceGetPathList(bmp, {
     let pathList = [];
     let polygons = [];
 
-    function bmpToPathlist() {
+    const bmpToPathlist = () => {
 
         let bmp1 = bmp.copy();
         let currentPoint = { x: 0, y: 0 }, path;
 
-        function findNext(pt) {
+        const findNext = (pt) => {
             let i = bmp1.w * pt.y + pt.x;
             while (i < bmp1.size && bmp1.data[i] !== 1) {
                 i++;
             }
             return i < bmp1.size && bmp1.index(i);
-        }
+        };
 
-        function majority(x, y) {
+        const majority = (x, y) => {
             for (let i = 2; i < 5; i++) {
                 let ct = 0;
                 for (let a = -i + 1; a <= i - 1; a++) {
@@ -848,9 +767,9 @@ function potraceGetPathList(bmp, {
                 }
             }
             return 0;
-        }
+        };
 
-        function findPath(pt) {
+        const findPath = (pt) => {
             let path = new Path(),
                 x = pt.x, y = pt.y,
                 dirx = 0, diry = 1, tmp;
@@ -907,9 +826,9 @@ function potraceGetPathList(bmp, {
             }
 
             return path;
-        }
+        };
 
-        function xorPath(path) {
+        const xorPath = (path) => {
             let y1 = path.pt[0].y,
                 len = path.len,
                 maxX, minY;
@@ -926,7 +845,7 @@ function potraceGetPathList(bmp, {
                     y1 = y;
                 }
             }
-        }
+        };
 
         while (currentPoint = findNext(currentPoint)) {
 
@@ -939,9 +858,9 @@ function potraceGetPathList(bmp, {
         }
 
         return pathList;
-    }
+    };
 
-    function processPath() {
+    const processPath = () => {
 
         function Quad() {
             this.data = [0, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -959,27 +878,27 @@ function potraceGetPathList(bmp, {
             this.y2 = y2;
         }
 
-        function mod(a, n) {
+        const mod = (a, n) => {
             return a >= n ? a % n : a >= 0 ? a : n - 1 - (-1 - a) % n;
-        }
+        };
 
-        function xprod(p1, p2) {
+        const xprod = (p1, p2) => {
             return p1.x * p2.y - p1.y * p2.x;
-        }
+        };
 
-        function cyclic(a, b, c) {
+        const cyclic = (a, b, c) => {
             if (a <= c) {
                 return (a <= b && b < c);
             } else {
                 return (a <= b || b < c);
             }
-        }
+        };
 
-        function sign(i) {
+        const sign = (i) => {
             return i > 0 ? 1 : i < 0 ? -1 : 0;
-        }
+        };
 
-        function quadform(Q, w) {
+        const quadform = (Q, w) => {
             let v = new Array(3), sum = 0;
 
             v[0] = w.x;
@@ -992,23 +911,22 @@ function potraceGetPathList(bmp, {
                 }
             }
             return sum;
-        }
+        };
 
-        function interval(lambda, a, b) {
+        const interval = (lambda, a, b) => {
             return { x: a.x + lambda * (b.x - a.x), y: a.y + lambda * (b.y - a.y) }
-        }
+        };
 
-        function dorth_infty(p0, p2) {
+        const dorth_infty = (p0, p2) => {
             return { x: -sign(p2.y - p0.y), y: sign(p2.x - p0.x) }
-        }
+        };
 
-        function ddenom(p0, p2) {
+        const ddenom = (p0, p2) => {
             let r = dorth_infty(p0, p2);
-
             return r.y * (p2.x - p0.x) - r.x * (p2.y - p0.y);
-        }
+        };
 
-        function getProd(type = '', p0 = {}, p1 = {}, p2 = {}, p3 = {},) {
+        const getProd = (type = '', p0 = {}, p1 = {}, p2 = {}, p3 = {}) => {
             let x1, x2, y1, y2;
             if (type === 'cprod' || type === 'iprod1') {
                 x1 = p1.x - p0.x;
@@ -1022,19 +940,19 @@ function potraceGetPathList(bmp, {
                 y2 = p2.y - p0.y;
             }
             return type === 'cprod' || type === 'dpara' ? x1 * y2 - x2 * y1 : x1 * x2 + y1 * y2;
-        }
+        };
 
-        function ddist(p, q) {
+        const ddist = (p, q) => {
             return sqrt((p.x - q.x) ** 2 + (p.y - q.y) ** 2);
 
-        }
+        };
 
-        function bezier(t, p0, p1, p2, p3) {
+        const bezier = (t, p0, p1, p2, p3) => {
             let s = 1 - t;
             return { x: s * s * s * p0.x + 3 * (s * s * t) * p1.x + 3 * (t * t * s) * p2.x + t * t * t * p3.x, y: s * s * s * p0.y + 3 * (s * s * t) * p1.y + 3 * (t * t * s) * p2.y + t * t * t * p3.y };
-        }
+        };
 
-        function tangent(p0, p1, p2, p3, q0, q1) {
+        const tangent = (p0, p1, p2, p3, q0, q1) => {
 
             let A = getProd('cprod', p0, p1, q0, q1);
             let B = getProd('cprod', p1, p2, q0, q1);
@@ -1060,9 +978,9 @@ function potraceGetPathList(bmp, {
             } else {
                 return -1;
             }
-        }
+        };
 
-        function calcSums(path) {
+        const calcSums = (path) => {
 
             path.x0 = path.pt[0].x;
             path.y0 = path.pt[0].y;
@@ -1076,9 +994,9 @@ function potraceGetPathList(bmp, {
                 s.push(new Sum(s[i].x + x, s[i].y + y, s[i].xy + x * y,
                     s[i].x2 + x * x, s[i].y2 + y * y));
             }
-        }
+        };
 
-        function calcLon(path) {
+        const calcLon = (path) => {
 
             let n = path.len, pt = path.pt, dir,
                 pivk = new Array(n),
@@ -1186,11 +1104,11 @@ function potraceGetPathList(bmp, {
             for (i = n - 1; cyclic(mod(i + 1, n), j, path.lon[i]); i--) {
                 path.lon[i] = j;
             }
-        }
+        };
 
-        function bestPolygon(path) {
+        const bestPolygon = (path) => {
 
-            function penalty3(path, i, j) {
+            const penalty3 = (path, i, j) => {
 
                 let n = path.len, pt = path.pt, sums = path.sums;
                 let x, y, xy, x2, y2,
@@ -1230,7 +1148,7 @@ function potraceGetPathList(bmp, {
                 s = ex * ex * a + 2 * ex * ey * b + ey * ey * c;
 
                 return sqrt(s);
-            }
+            };
 
             let i, j, m, k,
                 n = path.len,
@@ -1299,11 +1217,11 @@ function potraceGetPathList(bmp, {
                 path.po[j] = i;
             }
 
-        }
+        };
 
-        function adjustVertices(path) {
+        const adjustVertices = (path) => {
 
-            function pointslope(path, i, j, ctr, dir) {
+            const pointslope = (path, i, j, ctr, dir) => {
 
                 let n = path.len, sums = path.sums,
                     x, y, x2, xy, y2,
@@ -1361,7 +1279,7 @@ function potraceGetPathList(bmp, {
                 if (l === 0) {
                     dir.x = dir.y = 0;
                 }
-            }
+            };
 
             let m = path.m, po = path.po, n = path.len, pt = path.pt,
                 x0 = path.x0, y0 = path.y0,
@@ -1496,9 +1414,9 @@ function potraceGetPathList(bmp, {
                 }
                 path.curve.vertex[i] = { x: xmin + x0, y: ymin + y0 };
             }
-        }
+        };
 
-        function reverse(path) {
+        const reverse = (path) => {
             let curve = path.curve, m = curve.n, v = curve.vertex, i, j, tmp;
 
             for (i = 0, j = m - 1; i < j; i++, j--) {
@@ -1506,9 +1424,9 @@ function potraceGetPathList(bmp, {
                 v[i] = v[j];
                 v[j] = tmp;
             }
-        }
+        };
 
-        function smooth(path) {
+        const smooth = (path) => {
             let m = path.curve.n, curve = path.curve;
 
             let i, j, k, dd, denom, alpha,
@@ -1551,10 +1469,10 @@ function potraceGetPathList(bmp, {
                 curve.beta[j] = 0.5;
             }
             curve.alphacurve = 1;
-        }
+        };
 
         // start opt
-        function optiCurve(path) {
+        const optiCurve = (path) => {
 
             function Opti() {
                 this.pen = 0;
@@ -1564,7 +1482,7 @@ function potraceGetPathList(bmp, {
                 this.alpha = 0;
             }
 
-            function opti_penalty(path, i, j, res, opttolerance, convc, areac) {
+            const opti_penalty = (path, i, j, res, opttolerance, convc, areac) => {
                 let m = path.curve.n, curve = path.curve, vertex = curve.vertex,
                     k, k1, k2, conv, i1,
                     area, alpha, d, d1, d2,
@@ -1618,17 +1536,13 @@ function potraceGetPathList(bmp, {
 
                 A4 = A1 + A3 - A2;
 
-                if (A2 == A1) {
-                    return 1;
-                }
+                if (A2 === A1) return 1;
 
                 t = A3 / (A3 - A4);
                 s = A2 / (A2 - A1);
                 A = A2 * t / 2.0;
 
-                if (A === 0) {
-                    return 1;
-                }
+                if (A === 0) return 1;
 
                 R = area / A;
                 alpha = 2 - sqrt(4 - R / 0.3);
@@ -1693,7 +1607,7 @@ function potraceGetPathList(bmp, {
                 }
 
                 return 0;
-            }
+            };
 
             let curve = path.curve, m = curve.n, vert = curve.vertex,
                 pt = new Array(m + 1),
@@ -1792,7 +1706,7 @@ function potraceGetPathList(bmp, {
             }
             ocurve.alphacurve = 1;
             path.curve = ocurve;
-        }
+        };
 
         // end opt
 
@@ -1819,7 +1733,7 @@ function potraceGetPathList(bmp, {
             if (optcurve) { optiCurve(path); }
         }
 
-    }
+    };
 
     /**
      * run tracing
@@ -1828,30 +1742,8 @@ function potraceGetPathList(bmp, {
     bmpToPathlist();
     processPath();
 
-    if (getPolygon) {
-        let points = '';
-        polygons.forEach(poly => {
-            points += `M` + poly.map(pt => { return `${pt.x} ${pt.y}` }).join(' ');
-        });
-
-       // console.log(points);
-    }
-
     return { pathList, polygons };
 
-}
-
-const {
-    abs, acos, asin, atan, atan2, ceil, cos, exp, floor,
-    log, max, min, pow, random, round, sin, sqrt, tan, PI
-} = Math;
-
-// get angle helper
-function getAngle(p1, p2, normalize = false) {
-    let angle = atan2(p2.y - p1.y, p2.x - p1.x);
-    // normalize negative angles
-    if (normalize && angle < 0) angle += PI * 2;
-    return angle
 }
 
 /** Get relationship between a point and a polygon using ray-casting algorithm
@@ -1890,137 +1782,6 @@ function isPointInPolygon(pt, polygon, bb, skipBB = false) {
     return inside ? true : false;
 }
 
-function getSquareDistance(p1, p2) {
-    return (p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2
-}
-
-/**
-* Linear  interpolation (LERP) helper
-*/
-function interpolate(p1, p2, t, getTangent = false) {
-
-    let pt = {
-        x: (p2.x - p1.x) * t + p1.x,
-        y: (p2.y - p1.y) * t + p1.y,
-    };
-
-    if (getTangent) {
-        pt.angle = getAngle(p1, p2);
-
-        // normalize negative angles
-        if (pt.angle < 0) pt.angle += PI * 2;
-    }
-
-    return pt
-}
-
-function pointAtT(pts, t = 0.5, getTangent = false, getCpts = false) {
-
-    const getPointAtBezierT = (pts, t, getTangent = false) => {
-
-        let isCubic = pts.length === 4;
-        let p0 = pts[0];
-        let cp1 = pts[1];
-        let cp2 = isCubic ? pts[2] : pts[1];
-        let p = pts[pts.length - 1];
-        let pt = { x: 0, y: 0 };
-
-        if (getTangent || getCpts) {
-            let m0, m1, m2, m3, m4;
-            let shortCp1 = p0.x === cp1.x && p0.y === cp1.y;
-            let shortCp2 = p.x === cp2.x && p.y === cp2.y;
-
-            if (t === 0 && !shortCp1) {
-                pt.x = p0.x;
-                pt.y = p0.y;
-                pt.angle = getAngle(p0, cp1);
-            }
-
-            else if (t === 1 && !shortCp2) {
-                pt.x = p.x;
-                pt.y = p.y;
-                pt.angle = getAngle(cp2, p);
-            }
-
-            else {
-                // adjust if cps are on start or end point
-                if (shortCp1) t += 0.0000001;
-                if (shortCp2) t -= 0.0000001;
-
-                m0 = interpolate(p0, cp1, t);
-                if (isCubic) {
-                    m1 = interpolate(cp1, cp2, t);
-                    m2 = interpolate(cp2, p, t);
-                    m3 = interpolate(m0, m1, t);
-                    m4 = interpolate(m1, m2, t);
-                    pt = interpolate(m3, m4, t);
-
-                    // add angles
-                    pt.angle = getAngle(m3, m4);
-
-                    // add control points
-                    if (getCpts) pt.cpts = [m1, m2, m3, m4];
-                } else {
-                    m1 = interpolate(p0, cp1, t);
-                    m2 = interpolate(cp1, p, t);
-                    pt = interpolate(m1, m2, t);
-                    pt.angle = getAngle(m1, m2);
-
-                    // add control points
-                    if (getCpts) pt.cpts = [m1, m2];
-                }
-            }
-
-        }
-        // take simplified calculations without tangent angles
-        else {
-            let t1 = 1 - t;
-
-            // cubic beziers
-            if (isCubic) {
-                pt = {
-                    x:
-                        t1 ** 3 * p0.x +
-                        3 * t1 ** 2 * t * cp1.x +
-                        3 * t1 * t ** 2 * cp2.x +
-                        t ** 3 * p.x,
-                    y:
-                        t1 ** 3 * p0.y +
-                        3 * t1 ** 2 * t * cp1.y +
-                        3 * t1 * t ** 2 * cp2.y +
-                        t ** 3 * p.y,
-                };
-
-            }
-            // quadratic beziers
-            else {
-                pt = {
-                    x: t1 * t1 * p0.x + 2 * t1 * t * cp1.x + t ** 2 * p.x,
-                    y: t1 * t1 * p0.y + 2 * t1 * t * cp1.y + t ** 2 * p.y,
-                };
-            }
-
-        }
-
-        return pt
-
-    };
-
-    let pt;
-    if (pts.length > 2) {
-        pt = getPointAtBezierT(pts, t, getTangent);
-    }
-
-    else {
-        pt = interpolate(pts[0], pts[1], t, getTangent);
-    }
-
-    // normalize negative angles
-    if (getTangent && pt.angle < 0) pt.angle += PI * 2;
-
-    return pt
-}
-
 /**
  * get vertices from path command final on-path points
  */
@@ -2049,477 +1810,6 @@ function getPathDataVertices(pathData, includeCpts = false) {
     return polyPoints;
 }
 
-function getBezierExtremeT(pts) {
-    let tArr = pts.length === 4 ? cubicBezierExtremeT(pts[0], pts[1], pts[2], pts[3]) : quadraticBezierExtremeT(pts[0], pts[1], pts[2]);
-    return tArr;
-}
-
-// cubic bezier.
-function cubicBezierExtremeT(p0, cp1, cp2, p) {
-    let [x0, y0, x1, y1, x2, y2, x3, y3] = [p0.x, p0.y, cp1.x, cp1.y, cp2.x, cp2.y, p.x, p.y];
-
-    /**
-     * if control points are within 
-     * bounding box of start and end point 
-     * we cant't have extremes
-     */
-    let top = min(p0.y, p.y);
-    let left = min(p0.x, p.x);
-    let right = max(p0.x, p.x);
-    let bottom = max(p0.y, p.y);
-
-    if (
-        cp1.y >= top && cp1.y <= bottom &&
-        cp2.y >= top && cp2.y <= bottom &&
-        cp1.x >= left && cp1.x <= right &&
-        cp2.x >= left && cp2.x <= right
-    ) {
-        return []
-    }
-
-    var tArr = [],
-        a, b, c, t, t1, t2, b2ac, sqrt_b2ac;
-    for (var i = 0; i < 2; ++i) {
-        if (i == 0) {
-            b = 6 * x0 - 12 * x1 + 6 * x2;
-            a = -3 * x0 + 9 * x1 - 9 * x2 + 3 * x3;
-            c = 3 * x1 - 3 * x0;
-        } else {
-            b = 6 * y0 - 12 * y1 + 6 * y2;
-            a = -3 * y0 + 9 * y1 - 9 * y2 + 3 * y3;
-            c = 3 * y1 - 3 * y0;
-        }
-        if (abs(a) < 1e-12) {
-            if (abs(b) < 1e-12) {
-                continue;
-            }
-            t = -c / b;
-            if (0 < t && t < 1) {
-                tArr.push(t);
-            }
-            continue;
-        }
-        b2ac = b * b - 4 * c * a;
-        if (b2ac < 0) {
-            if (abs(b2ac) < 1e-12) {
-                t = -b / (2 * a);
-                if (0 < t && t < 1) {
-                    tArr.push(t);
-                }
-            }
-            continue;
-        }
-        sqrt_b2ac = sqrt(b2ac);
-        t1 = (-b + sqrt_b2ac) / (2 * a);
-        if (0 < t1 && t1 < 1) {
-            tArr.push(t1);
-        }
-        t2 = (-b - sqrt_b2ac) / (2 * a);
-        if (0 < t2 && t2 < 1) {
-            tArr.push(t2);
-        }
-    }
-
-    var j = tArr.length;
-    while (j--) {
-        t = tArr[j];
-    }
-    return tArr;
-}
-
-function quadraticBezierExtremeT(p0, cp1, p) {
-    /**
-     * if control points are within 
-     * bounding box of start and end point 
-     * we cant't have extremes
-     */
-    let top = min(p0.y, p.y);
-    let left = min(p0.x, p.x);
-    let right = max(p0.x, p.x);
-    let bottom = max(p0.y, p.y);
-    let a, b, t;
-
-    if (
-        cp1.y >= top && cp1.y <= bottom &&
-        cp1.x >= left && cp1.x <= right
-    ) {
-        return []
-    }
-
-    let [x0, y0, x1, y1, x2, y2] = [p0.x, p0.y, cp1.x, cp1.y, p.x, p.y];
-    let extemeT = [];
-
-    for (var i = 0; i < 2; ++i) {
-        a = i == 0 ? x0 - 2 * x1 + x2 : y0 - 2 * y1 + y2;
-        b = i == 0 ? -2 * x0 + 2 * x1 : -2 * y0 + 2 * y1;
-        if (abs(a) > 1e-12) {
-            t = -b / (2 * a);
-            if (t > 0 && t < 1) {
-                extemeT.push(t);
-            }
-        }
-    }
-    return extemeT
-}
-
-/**
- * split compound paths into 
- * sub path data array
- */
-function splitSubpaths(pathData) {
-
-    let subPathArr = [];
-
-    try {
-        let subPathIndices = pathData.map((com, i) => (com.type.toLowerCase() === 'm' ? i : -1)).filter(i => i !== -1);
-
-    } catch {
-        console.log('catch', pathData);
-    }
-
-    let subPathIndices = pathData.map((com, i) => (com.type.toLowerCase() === 'm' ? i : -1)).filter(i => i !== -1);
-
-    // no compound path
-    if (subPathIndices.length === 1) {
-        return [pathData]
-    }
-    subPathIndices.forEach((index, i) => {
-        subPathArr.push(pathData.slice(index, subPathIndices[i + 1]));
-    });
-
-    return subPathArr;
-}
-
-/**
- * calculate split command points
- * for single t value 
- */
-function splitCommand(points, t) {
-
-    let seg1 = [];
-    let seg2 = [];
-
-    let p0 = points[0];
-    let cp1 = points[1];
-    let cp2 = points[points.length - 2];
-    let p = points[points.length - 1];
-    let m0, m1, m2, m3, m4, p2;
-
-    // cubic
-    if (points.length === 4) {
-        m0 = pointAtT([p0, cp1], t);
-        m1 = pointAtT([cp1, cp2], t);
-        m2 = pointAtT([cp2, p], t);
-        m3 = pointAtT([m0, m1], t);
-        m4 = pointAtT([m1, m2], t);
-
-        // split end point
-        p2 = pointAtT([m3, m4], t);
-
-        // 1. segment
-        seg1.push(
-            { x: p0.x, y: p0.y },
-            { x: m0.x, y: m0.y },
-            { x: m3.x, y: m3.y },
-            { x: p2.x, y: p2.y },
-        );
-        // 2. segment
-        seg2.push(
-            { x: p2.x, y: p2.y },
-            { x: m4.x, y: m4.y },
-            { x: m2.x, y: m2.y },
-            { x: p.x, y: p.y },
-        );
-    }
-
-    // quadratic
-    else if (points.length === 3) {
-        m1 = pointAtT([p0, cp1], t);
-        m2 = pointAtT([cp1, p], t);
-        p2 = pointAtT([m1, m2], t);
-
-        // 1. segment
-        seg1.push(
-            { x: p0.x, y: p0.y },
-            { x: m1.x, y: m1.y },
-            { x: p2.x, y: p2.y },
-        );
-
-        // 1. segment
-        seg2.push(
-            { x: p2.x, y: p2.y },
-            { x: m2.x, y: m2.y },
-            { x: p.x, y: p.y },
-        );
-    }
-
-    // lineto
-    else if (points.length === 2) {
-        m1 = pointAtT([p0, p], t);
-
-        // 1. segment
-        seg1.push(
-            { x: p0.x, y: p0.y },
-            { x: m1.x, y: m1.y },
-        );
-
-        // 1. segment
-        seg2.push(
-            { x: m1.x, y: m1.y },
-            { x: p.x, y: p.y },
-        );
-    }
-    return [seg1, seg2];
-}
-
-/**
- * calculate command extremes
- */
-
-function addExtemesToCommand(p0, values, verbose = false) {
-
-    let pathDataNew = [];
-
-    let type = values.length === 6 ? 'C' : 'Q';
-    let cp1 = { x: values[0], y: values[1] };
-    let cp2 = type === 'C' ? { x: values[2], y: values[3] } : cp1;
-    let p = { x: values[4], y: values[5] };
-
-    // get inner bbox
-    let xMax = max(p.x, p0.x);
-    let xMin = min(p.x, p0.x);
-    let yMax = max(p.y, p0.y);
-    let yMin = min(p.y, p0.y);
-
-    let extremeCount = 0;
-    let tArr = [];
-
-    if (
-        cp1.x < xMin ||
-        cp1.x > xMax ||
-        cp1.y < yMin ||
-        cp1.y > yMax ||
-        cp2.x < xMin ||
-        cp2.x > xMax ||
-        cp2.y < yMin ||
-        cp2.y > yMax
-
-    ) {
-        let pts = type === 'C' ? [p0, cp1, cp2, p] : [p0, cp1, p];
-        tArr = getBezierExtremeT(pts).sort();
-
-        // avoid small t values
-        tArr = tArr.filter(t=>t>0.05 && t<0.95);
-
-        if (tArr.length) {
-            let commandsSplit = splitCommandAtTValues(p0, values, tArr);
-            pathDataNew.push(...commandsSplit);
-            extremeCount += commandsSplit.length;
-        } else {
-
-            pathDataNew.push({ type: type, values: values });
-        }
-
-    }
-    // no extremes
-    else {
-        pathDataNew.push({ type: type, values: values });
-    }
-
-    return { pathData: pathDataNew, count: extremeCount, tArr };
-
-}
-
-function addExtremePoints(pathData, verbose = false) {
-    let pathDataNew = [pathData[0]];
-
-    // previous on path point
-    let p0 = { x: pathData[0].values[0], y: pathData[0].values[1] };
-    let M = { x: pathData[0].values[0], y: pathData[0].values[1] };
-    let len = pathData.length;
-
-    for (let c = 1; len && c < len; c++) {
-        let com = pathData[c];
-
-        let { type, values } = com;
-        let valsL = values.slice(-2);
-        ({ x: valsL[0], y: valsL[1] });
-
-        if (type !== 'C' && type !== 'Q') {
-            pathDataNew.push(com);
-        }
-
-        else {
-            // add extremes
-            if (type === 'C' || type === 'Q') {
-
-                let extremeData = addExtemesToCommand(p0, values, verbose);
-                let { pathData, tArr=[]} = extremeData;
-
-                // found extremes?
-                if(pathData.length>1){
-
-                   pathData.forEach((com,i)=>{
-                       if(i<pathData.length-1){
-                           let {values} = com;
-                           values.slice(-2);
-
-                       }
-                   });
-
-                    if (verbose) {
-                        tArr.forEach((t, i) => {
-                            pathData[i].t = t;
-                        });
-                    }
-                }
-
-                pathDataNew.push(...pathData);
-
-            }
-        }
-
-        p0 = { x: valsL[0], y: valsL[1] };
-
-        if (type.toLowerCase() === "z") {
-            p0 = M;
-        } else if (type === "M") {
-            M = { x: valsL[0], y: valsL[1] };
-        }
-    }
-
-    return pathDataNew;
-}
-
-/**
- * split commands multiple times
- * based on command points
- * and t array
- */
-function splitCommandAtTValues(p0, values, tArr, returnCommand = true) {
-    let segmentPoints = [];
-
-    if (!tArr.length) {
-        return false
-    }
-
-    let valuesL = values.length;
-    let p = { x: values[valuesL - 2], y: values[valuesL - 1] };
-    let cp1, cp2, points;
-
-    if (values.length === 2) {
-        points = [p0, p];
-    }
-    else if (values.length === 4) {
-        cp1 = { x: values[0], y: values[1] };
-        points = [p0, cp1, p];
-    }
-    else if (values.length === 6) {
-        cp1 = { x: values[0], y: values[1] };
-        cp2 = { x: values[2], y: values[3] };
-        points = [p0, cp1, cp2, p];
-    }
-
-    if (tArr.length) {
-        // single t
-        if (tArr.length === 1) {
-            let segs = splitCommand(points, tArr[0]);
-            let points1 = segs[0];
-            let points2 = segs[1];
-            segmentPoints.push(points1, points2);
-
-        } else {
-
-            // 1st segment
-            let t1 = tArr[0];
-            let seg0 = splitCommand(points, t1);
-            let points0 = seg0[0];
-            segmentPoints.push(points0);
-            points = seg0[1];
-
-            for (let i = 1; i < tArr.length; i++) {
-                t1 = tArr[i - 1];
-                let t2 = tArr[i];
-
-                // new t value for 2nd segment
-                let t2_1 = (t2 - t1) / (1 - t1);
-                let segs2 = splitCommand(points, t2_1);
-                segmentPoints.push(segs2[0]);
-
-                if (i === tArr.length - 1) {
-                    segmentPoints.push(segs2[segs2.length - 1]);
-                }
-                // take 2nd segment for next splitting
-                points = segs2[1];
-            }
-        }
-    }
-
-    if (returnCommand) {
-
-        let pathData = [];
-        let com, values;
-
-        segmentPoints.forEach(seg => {
-            com = { type: '', values: [] };
-            seg.shift();
-            values = seg.map(val => { return Object.values(val) }).flat();
-            com.values = values;
-
-            // cubic
-            if (seg.length === 3) {
-                com.type = 'C';
-            }
-
-            // quadratic
-            else if (seg.length === 2) {
-                com.type = 'Q';
-            }
-
-            // lineto
-            else if (seg.length === 1) {
-                com.type = 'L';
-            }
-            pathData.push(com);
-        });
-        return pathData;
-    }
-
-    return segmentPoints;
-}
-
-/**
- * calculate polygon bbox
- */
-function getPolyBBox(vertices, decimals = -1) {
-    let xArr = vertices.map(pt => pt.x);
-    let yArr = vertices.map(pt => pt.y);
-    let left = min(...xArr);
-    let right = max(...xArr);
-    let top = min(...yArr);
-    let bottom = max(...yArr);
-    let bb = {
-        x: left,
-        left: left,
-        right: right,
-        y: top,
-        top: top,
-        bottom: bottom,
-        width: right - left,
-        height: bottom - top
-    };
-
-    // round
-
-    if (decimals > -1) {
-        for (let prop in bb) {
-            bb[prop] = +bb[prop].toFixed(decimals);
-        }
-    }
-
-    return bb;
-}
-
 function checkBBoxIntersections(bb, bb1) {
     let [x, y, width, height, right, bottom] = [
         bb.x,
@@ -2546,259 +1836,6 @@ function checkBBoxIntersections(bb, bb1) {
         }
     }
     return intersects;
-}
-
-function getPolygonArea(points, tolerance = 0.001) {
-    let area = 0;
-    for (let i = 0, len = points.length; len && i < len; i++) {
-        let addX = points[i].x;
-        let addY = points[i === points.length - 1 ? 0 : i + 1].y;
-        let subX = points[i === points.length - 1 ? 0 : i + 1].x;
-        let subY = points[i].y;
-        area += addX * addY * 0.5 - subX * subY * 0.5;
-    }
-    return area;
-}
-
-/**
- * shift starting point
- */
-function shiftSvgStartingPoint(pathData, offset) {
-    let pathDataL = pathData.length;
-    let newStartIndex = 0;
-    let lastCommand = pathData[pathDataL - 1]["type"];
-    let isClosed = lastCommand.toLowerCase() === "z";
-
-    if (!isClosed || offset < 1 || pathData.length < 3) {
-        return pathData;
-    }
-
-    let trimRight = isClosed ? 1 : 0;
-
-    // add explicit lineto
-    addClosePathLineto(pathData);
-
-    // M start offset
-    newStartIndex =
-        offset + 1 < pathData.length - 1
-            ? offset + 1
-            : pathData.length - 1 - trimRight;
-
-    // slice array to reorder
-    let pathDataStart = pathData.slice(newStartIndex);
-    let pathDataEnd = pathData.slice(0, newStartIndex);
-
-    // remove original M
-    pathDataEnd.shift();
-    let pathDataEndL = pathDataEnd.length;
-
-    let pathDataEndLastValues, pathDataEndLastXY;
-    pathDataEndLastValues = pathDataEnd[pathDataEndL - 1].values || [];
-    pathDataEndLastXY = [
-        pathDataEndLastValues[pathDataEndLastValues.length - 2],
-        pathDataEndLastValues[pathDataEndLastValues.length - 1]
-    ];
-
-    if (trimRight) {
-        pathDataStart.pop();
-        pathDataEnd.push({
-            type: "Z",
-            values: []
-        });
-    }
-    // prepend new M command and concatenate array chunks
-    pathData = [
-        {
-            type: "M",
-            values: pathDataEndLastXY
-        },
-        ...pathDataStart,
-        ...pathDataEnd,
-    ];
-
-    return pathData;
-}
-
-/**
- * Add closing lineto:
- * needed for path reversing or adding points
- */
-
-function addClosePathLineto(pathData) {
-    let pathDataL = pathData.length;
-    let closed = pathData[pathDataL - 1]["type"] == "Z" ? true : false;
-
-    let M = pathData[0];
-    let [x0, y0] = [M.values[0], M.values[1]].map(val => { return +val.toFixed(8) });
-    let lastCom = closed ? pathData[pathDataL - 2] : pathData[pathDataL - 1];
-    let lastComL = lastCom.values.length;
-    let [xE, yE] = [lastCom.values[lastComL - 2], lastCom.values[lastComL - 1]].map(val => { return +val.toFixed(8) });
-
-    if (closed && (x0 != xE || y0 != yE)) {
-
-        pathData.pop();
-        pathData.push(
-            {
-                type: "L",
-                values: [x0, y0]
-            },
-            {
-                type: "Z",
-                values: []
-            }
-        );
-    }
-
-    return pathData;
-}
-
-function pathDataToTopLeft2(pathData,
-    {
-        removeFinalLineto = true,
-        startToTop = true,
-        bb={x:0,y:0,width:0,height:0}
-    } = {}
-) {
-
-    let pathDataNew = [];
-
-    let len = pathData.length;
-    let M = { x: pathData[0].values[0], y: pathData[0].values[1] };
-    let isClosed = pathData[len - 1].type.toLowerCase() === 'z';
-
-    // we can't change starting point for non closed paths
-    if (!isClosed) {
-        return pathData
-    }
-
-    let newIndex = 0;
-
-    // top left point
-
-    if (startToTop) {
-
-        let indices = [];
-        for (let i = 0, len = pathData.length; i < len; i++) {
-            let com = pathData[i];
-            let { type, values } = com;
-            if (values.length) {
-
-                let valsL = values.slice(-2);
-                let p = { x: valsL[0], y: valsL[1], dist: 0, index: 0 };
-
-                // add square distance
-
-                p.index = i;
-                indices.push(p);
-
-            }
-        }
-
-        // find top most
-        indices = indices.sort((a, b) => a.y - b.y || a.x - b.x);
-        newIndex = indices[0].index;
-
-    }
-
-    // reorder 
-    pathData = shiftSvgStartingPoint(pathData, newIndex);
-    len = pathData.length;
-
-    // update M
-    M = { x: pathData[0].values[0], y: pathData[0].values[1] };
-
-    // remove last lineto
-    let penultimateCom = pathData[len - 2];
-    let penultimateType = penultimateCom.type;
-    let penultimateComCoords = penultimateCom.values.slice(-2);
-
-    let tolerance = 0.00001;
-    let diffX= abs(penultimateComCoords[0] - M.x);
-    let diffY= abs(penultimateComCoords[1] - M.y);
-
-    let isClosingCommand = penultimateType === 'L' && 
-    diffX<tolerance && 
-    diffY<tolerance;
-
-    if (removeFinalLineto && isClosingCommand) {
-        pathData.splice(len - 2, 1);
-    }
-    pathDataNew.push(...pathData);
-
-    console.log('pathDataToTopLeft2', pathDataNew );
-
-    return pathDataNew
-}
-
-/**
- * avoids starting points in the middle of 2 smooth curves
- * can replace linetos with closepaths
- */
-
-function pathDataToTopLeft(pathData, removeFinalLineto = false, startToTop = true) {
-
-    let pathDataNew = [];
-
-    // move starting point to first lineto
-
-    new Set([...pathData.map(com => com.type)]);
-
-    let len = pathData.length;
-
-    let M = { x: pathData[0].values[0], y: pathData[0].values[1] };
-    let isClosed = pathData[len - 1].type.toLowerCase() === 'z';
-
-    // we can't change starting point for non closed paths
-    if (!isClosed) {
-        return pathData
-    }
-    let newIndex = 0;
-
-    let p0 = { x: 0, y: 0 };
-
-    if (startToTop) {
-
-        let indices = [];
-        for (let i = 0, len = pathData.length; i < len; i++) {
-            let com = pathData[i];
-            let { type, values } = com;
-            if (values.length) {
-
-                let valsL = values.slice(-2);
-                let p = { x: valsL[0], y: valsL[1], dist: 0, index: 0 };
-
-                // add square distance
-                p.dist = getSquareDistance(p0, p);
-                p.index = i;
-
-                indices.push(p);
-
-            }
-        }
-
-        // find top most
-        indices = indices.sort((a, b) => a.dist - b.dist || a.y - b.y);
-        newIndex = indices[0].index;
-
-    }
-
-    // reorder 
-    pathData = shiftSvgStartingPoint(pathData, newIndex);
-    len = pathData.length;
-
-    // remove last lineto
-    let penultimateCom = pathData[len - 2];
-    let penultimateType = penultimateCom.type;
-    let penultimateComCoords = penultimateCom.values.slice(-2);
-
-    let isClosingCommand = penultimateType === 'L' && penultimateComCoords[0] === M.x && penultimateComCoords[1] === M.y;
-
-    if (removeFinalLineto && isClosingCommand) {
-        pathData.splice(len - 2, 1);
-    }
-    pathDataNew.push(...pathData);
-
-    return pathDataNew
 }
 
 /**
@@ -3100,6 +2137,193 @@ function pathDataToShorthands(pathData, decimals = -1, test = true) {
     return pathDataShorts;
 }
 
+function pathDataToTopLeft(pathData, removeFinalLineto = false, startToTop = true) {
+
+    let pathDataNew = [];
+    let len = pathData.length;
+    let M = { x: pathData[0].values[0], y: pathData[0].values[1] };
+    let isClosed = pathData[len - 1].type.toLowerCase() === 'z';
+
+    // we can't change starting point for non closed paths
+    if (!isClosed) {
+        return pathData
+    }
+
+    let newIndex = 0;
+
+    if (startToTop) {
+
+        let indices = [];
+        for (let i = 0, len = pathData.length; i < len; i++) {
+            let com = pathData[i];
+            let { type, values } = com;
+            if (values.length) {
+
+                let valsL = values.slice(-2);
+                let p = { x: valsL[0], y: valsL[1], dist: 0, index: 0 };
+                p.index = i;
+                indices.push(p);
+            }
+        }
+
+        // find top most
+        indices = indices.sort((a, b) => a.x - b.x || a.y - b.y);
+        newIndex = indices[0].index;
+
+    }
+
+    // reorder 
+    pathData = shiftSvgStartingPoint(pathData, newIndex);
+    len = pathData.length;
+
+    // remove last lineto
+    let penultimateCom = pathData[len - 2];
+    let penultimateType = penultimateCom.type;
+    let penultimateComCoords = penultimateCom.values.slice(-2);
+
+    let isClosingCommand = penultimateType === 'L' && penultimateComCoords[0] === M.x && penultimateComCoords[1] === M.y;
+
+    if (removeFinalLineto && isClosingCommand) {
+        pathData.splice(len - 2, 1);
+    }
+
+    pathDataNew.push(...pathData);
+
+    return pathDataNew
+}
+
+/**
+ * shift starting point
+ */
+function shiftSvgStartingPoint(pathData, offset) {
+    let pathDataL = pathData.length;
+    let newStartIndex = 0;
+    let lastCommand = pathData[pathDataL - 1]["type"];
+    let isClosed = lastCommand.toLowerCase() === "z";
+
+    if (!isClosed || offset < 1 || pathData.length < 3) {
+        return pathData;
+    }
+
+    let trimRight = isClosed ? 1 : 0;
+
+    // add explicit lineto
+    addClosePathLineto(pathData);
+
+    // M start offset
+    newStartIndex =
+        offset + 1 < pathData.length - 1
+            ? offset + 1
+            : pathData.length - 1 - trimRight;
+
+    // slice array to reorder
+    let pathDataStart = pathData.slice(newStartIndex);
+    let pathDataEnd = pathData.slice(0, newStartIndex);
+
+    // remove original M
+    pathDataEnd.shift();
+    let pathDataEndL = pathDataEnd.length;
+
+    let pathDataEndLastValues, pathDataEndLastXY;
+    pathDataEndLastValues = pathDataEnd[pathDataEndL - 1].values || [];
+    pathDataEndLastXY = [
+        pathDataEndLastValues[pathDataEndLastValues.length - 2],
+        pathDataEndLastValues[pathDataEndLastValues.length - 1]
+    ];
+
+    if (trimRight) {
+        pathDataStart.pop();
+        pathDataEnd.push({
+            type: "Z",
+            values: []
+        });
+    }
+    // prepend new M command and concatenate array chunks
+    pathData = [
+        {
+            type: "M",
+            values: pathDataEndLastXY
+        },
+        ...pathDataStart,
+        ...pathDataEnd,
+    ];
+
+    return pathData;
+}
+
+/**
+ * Add closing lineto:
+ * needed for path reversing or adding points
+ */
+
+function addClosePathLineto(pathData) {
+    let pathDataL = pathData.length;
+    let closed = pathData[pathDataL - 1]["type"] == "Z" ? true : false;
+
+    let M = pathData[0];
+    let [x0, y0] = [M.values[0], M.values[1]].map(val => { return +val.toFixed(8) });
+    let lastCom = closed ? pathData[pathDataL - 2] : pathData[pathDataL - 1];
+    let lastComL = lastCom.values.length;
+    let [xE, yE] = [lastCom.values[lastComL - 2], lastCom.values[lastComL - 1]].map(val => { return +val.toFixed(8) });
+
+    if (closed && (x0 != xE || y0 != yE)) {
+
+        pathData.pop();
+        pathData.push(
+            {
+                type: "L",
+                values: [x0, y0]
+            },
+            {
+                type: "Z",
+                values: []
+            }
+        );
+    }
+
+    return pathData;
+}
+
+function removeZeroLengthLinetos(pathData) {
+
+    let M = { x: pathData[0].values[0], y: pathData[0].values[1] };
+    let p0 = M;
+    let p = p0;
+
+    let pathDataN = [pathData[0]];
+
+    for (let c = 1, l = pathData.length; c < l; c++) {
+        let com = pathData[c];
+        let { type, values, t = 0 } = com;
+
+        let valsL = values.slice(-2);
+        p = { x: valsL[0], y: valsL[1] };
+
+        if (type === 'L' && p.x === p0.x && p.y === p0.y) {
+
+            continue
+        }
+
+        pathDataN.push(com);
+        p0 = p;
+    }
+
+    return pathDataN
+
+}
+
+function getPolygonArea(points, tolerance = 0.001) {
+    let area = 0;
+    for (let i = 0, len = points.length; len && i < len; i++) {
+        let addX = points[i].x;
+        let addY = points[i === points.length - 1 ? 0 : i + 1].y;
+        let subX = points[i === points.length - 1 ? 0 : i + 1].x;
+        let subY = points[i].y;
+        area += addX * addY * 0.5 - subX * subY * 0.5;
+    }
+    return area;
+}
+
 function pathDataRemoveColinear(pathData, tolerance = 0.00001) {
 
     let pathDataN = [pathData[0]];
@@ -3157,150 +2381,6 @@ function pathDataRemoveColinear(pathData, tolerance = 0.00001) {
 
 }
 
-function fixPathData(pathData, {
-    addExtremes = false,
-    sortSubPaths = true,
-    sortCommands = true,
-    fixFlatCubics = true,
-    removeCollinear = true
-} = {}) {
-
-    let pathDataN = [];
-
-    // find subpaths
-    let subPathArr = splitSubpaths(pathData);
-
-    // add more data for bbox
-    let subPathData = subPathArr.map(pathData => {
-        return { pathData, bb: {}, tolerance: 0 }
-    });
-
-    let len = subPathData.length;
-
-    for (let i = 0; i < len; i++) {
-
-        let { pathData } = subPathData[i];
-
-        // add extremes - better bbox
-        if (addExtremes) {
-            let verbose = true;
-            pathData = addExtremePoints(pathData, verbose);
-            subPathData[i].pathData = pathData;
-        }
-
-        /**
-         * get bbox
-         */
-        let pathPoly = getPathDataVertices(pathData);
-        let bb = getPolyBBox(pathPoly);
-        let { width, height } = bb;
-
-        // path global tolerance
-        subPathData[i].tolerance = (width + height) / 2 * 0.001;
-
-        // subpath bbox
-        subPathData[i].bb = bb;
-
-    }
-
-    /**
-     * get total bounding box of compound path
-     */
-    let xArr = subPathData.map(sub => [sub.bb.x, sub.bb.right]).flat();
-    let yArr = subPathData.map(sub => [sub.bb.y, sub.bb.bottom]).flat();
-
-    let left = min(...xArr);
-    let right = max(...xArr);
-
-    let top = min(...yArr);
-    let bottom = max(...yArr);
-
-    let width = right - left;
-    let height = bottom - top;
-
-    let bb = {
-        x: left,
-        y: top,
-        left,
-        top,
-        right,
-        bottom,
-        width,
-        height
-    };
-
-    /**
-     * sort subpaths
-     * to top-left
-     * potrace messes this up
-     */
-    let pt0 = { x: bb.x, y: bb.y };
-    subPathData.forEach((sub, s) => {
-        // distance to top left
-        let pt = { x: sub.bb.x, y: sub.bb.y };
-        let dist = getSquareDistance(pt0, pt);
-        sub.dist = dist;
-
-    });
-
-    subPathData.sort((a, b) => a.dist - b.dist || a.bb.y - b.bb.y);
-
-    /**
-     * remove zero length linetos
-     * fix extremes close 
-     * to adjacent beziers
-     */
-
-    for (let i = 0; i < len; i++) {
-
-        let { pathData, tolerance, bb } = subPathData[i];
-
-        // remove zero linetos
-        pathData = removeZeroLengthLinetos(pathData);
-
-        // sort to top left
-        pathData = pathDataToTopLeft2(pathData, { bb });
-
-        pathData = pathDataRemoveColinear(pathData);
-
-        pathDataN.push(...pathData);
-
-    }
-
-    pathDataN = convertPathData(pathDataN);
-
-    return pathDataN;
-
-}
-
-function removeZeroLengthLinetos(pathData) {
-
-    let M = { x: pathData[0].values[0], y: pathData[0].values[1] };
-    let p0 = M;
-    let p = p0;
-
-    let pathDataN = [pathData[0]];
-
-    for (let c = 1, l = pathData.length; c < l; c++) {
-        let com = pathData[c];
-        let { type, values, t = 0 } = com;
-
-        let valsL = values.slice(-2);
-        p = { x: valsL[0], y: valsL[1] };
-
-        if (type === 'L' && p.x === p0.x && p.y === p0.y) {
-
-            continue
-        }
-
-        pathDataN.push(com);
-        p0 = p;
-    }
-
-    return pathDataN
-
-}
-
 /**
 * serialize pathData array to 
 * d attribute string 
@@ -3343,12 +2423,82 @@ function pathDataToD(pathData, decimals = -1, minify = false) {
     return d;
 }
 
+function pathDataArrayToPDF(pathDataArray = [], { width = 0, height = 0 } = {}) {
+
+    let content = '';
+    pathDataArray.forEach(pathData => {
+        content += pathDataToPDF(pathData, { height })+`\n`;
+    });
+
+    let contentLength = new TextEncoder().encode(content).length;
+
+    let pdf = `%PDF-1.4\n`;
+    let objects = [
+        '<<\n/Type /Catalog\n/Pages 2 0 R\n>>',
+        `<<\n/Type /Pages\n/Kids [3 0 R]\n/Count 1\n>>`,
+        `<<\n/Type /Page\n/Parent 2 0 R\n/MediaBox [0 0 ${width} ${height}]\n/Contents 4 0 R\n>>`,
+        `<<\n/Length ${contentLength}\n>>\nstream\n${content}endstream`,
+    ];
+
+    let xref = [];
+    for (let i = 0; i < objects.length; i++) {
+        xref.push(pdf.length);
+        pdf += `${i + 1} 0 obj\n${objects[i]}\nendobj\n`;
+    }
+
+    let xrefPos = new TextEncoder().encode(pdf).length;
+
+    pdf += `xref\n0 ${objects.length + 1}\n`;
+    pdf += '0000000000 65535 f \n';
+    for (let pos of xref) {
+        pdf += `${String(pos).padStart(10, '0')} 00000 n \n`;
+    }
+
+    pdf += `trailer\n<<\n/Size ${objects.length + 1}\n/Root 1 0 R\n>>\n`;
+    pdf += `startxref\n${xrefPos}\n%%EOF`;
+
+    return pdf;
+}
+
+function pathDataToPDF(pathData, { height = 0, decimals=3 } = {}) {
+
+    let pdf = [
+            `q`,
+            `0 0 0 1 k`,        
+    ];
+
+    pathData.forEach(com => {
+        let { type, values } = com;
+        if (values.length) {
+
+            // apply offset
+            let yOff = height;
+
+            for (let i = 1, l = values.length; i < l; i += 2) {
+                values[i - 1] = (values[i - 1]).toFixed(decimals);
+                values[i] = +(yOff - values[i]).toFixed(decimals);
+            }
+        }
+        let comPdf =  values.length ? `${values.join(' ')} ${type.toLowerCase()}` : 'h';
+        pdf.push(
+            comPdf,
+        );
+    });
+
+    pdf.push(`f`,`Q`);
+    
+    let res =  pdf.join('\n');
+
+    return res
+}
+
 function getSVG(pathDataArray, width, height, {
     toRelative = true,
     toShorthands = true,
     decimals = 3,
     addDimensions = false,
-    optimize = false
+    optimize = true,
+    getPDF= true
 } = {}) {
 
     width = ceil(width);
@@ -3380,7 +2530,6 @@ function getSVG(pathDataArray, width, height, {
      * starting point
      * remove colinear/flat segments
      */
-
     if (optimize) {
         for (let i = 0, l = subPathArr.length; i < l; i++) {
 
@@ -3504,7 +2653,97 @@ function getSVG(pathDataArray, width, height, {
     let d = pathDataToD(pathData, decimals);
     let svg = `<svg viewBox="0 0 ${width} ${height}" ${dimAtts}xmlns="http://www.w3.org/2000/svg"><path d="${d}"/></svg>`;
 
-    return { width, height, commands: pathData.length, svg, d, svgSplit, dArr, pathData, pathDataArr }
+    // generate PDF output
+    let pdf = '';
+    if(getPDF){
+        try {
+            pdf = pathDataArrayToPDF(pathDataArr, { width, height });
+        } catch {
+            console.warn('pdf generation failed');
+        }
+    }
+
+    return { width, height, commands: pathData.length, svg, d, svgSplit, dArr, pathData, pathDataArr, pdf }
+
+}
+
+function getPotracePathData(pathList = [], scale = 1) {
+
+    // sort pathList to top-left to bottom right
+    pathList.sort((a, b) => a.minX - b.minX || a.minY - b.minY);
+
+    let len = pathList.length;
+    let pathDataArr = [];
+
+    for (let l = 0; l < len; l++) {
+
+        let pathData = [];
+
+        // sub paths starting with ;M
+        let path = pathList[l];
+        let {curve, minX, maxX, minY, maxY, sign}  = path;
+
+        let bb = {
+            x: minX,
+            y: minY,
+            width: maxX-minX,
+            height: maxY-minY,
+        };
+
+        let n = curve.n, coms;
+
+        pathData.push(
+            {
+                type: 'M', values: [
+                    curve.c[(n - 1) * 3 + 2].x * scale,
+                    curve.c[(n - 1) * 3 + 2].y * scale
+                ],
+                // save bbbox to each M
+                bb,
+                cw: sign==='+' ? true : false
+            },
+        );
+
+        for (let i = 0; i < n; i++) {
+            let type = curve.tag[i];
+            if (type === "curve") {
+                coms = [{
+                    type: 'C', values: [
+                        curve.c[i * 3].x * scale,
+                        curve.c[i * 3].y * scale,
+                        curve.c[i * 3 + 1].x * scale,
+                        curve.c[i * 3 + 1].y * scale,
+                        curve.c[i * 3 + 2].x * scale,
+                        curve.c[i * 3 + 2].y * scale
+                    ]
+                }];
+
+            } else if (type === "corner") {
+                coms = [
+
+                    {
+                        type: 'L', values: [
+                            curve.c[i * 3 + 1].x * scale,
+                            curve.c[i * 3 + 1].y * scale,
+                        ]
+                    },
+                    {
+                        type: 'L', values: [
+                            curve.c[i * 3 + 2].x * scale,
+                            curve.c[i * 3 + 2].y * scale,
+                        ]
+                    }
+                ];
+            }
+            pathData.push(...coms);
+        }
+
+        pathData.push({ type: 'Z', values: [] });
+        pathDataArr.push(pathData);
+
+    }
+
+    return pathDataArr
 
 }
 
@@ -3512,7 +2751,13 @@ function PotraceObj(data = {}) {
     Object.assign(this, data);
 }
 
-PotraceObj.prototype.getSVG = function (split=false) {
+// get PDF Object URL
+PotraceObj.prototype.getPdf = function () {
+    const objectURL = URL.createObjectURL(new Blob([this.pdf], { type: 'application/pdf' }));
+    return objectURL;
+};
+
+PotraceObj.prototype.getSVG = function (split = false) {
     return !split ? this.svg : this.svgSplit;
 };
 
@@ -3545,16 +2790,22 @@ async function PotracePlus(input, {
     brightness = 1,
     contrast = 1,
     invert = 0,
-    blur=0,
+    blur = 0,
 
     // svg processing
     crop = true,
-    optimize = false,
+    optimize = true,
 
     addDimensions = true,
     toRelative = true,
     toShorthands = true,
-    decimals = 3
+    decimals = 3,
+
+    // get unoptimized polygon
+    getPolygon = true,
+
+    // get PDF data
+    getPDF = true
 
 } = {}) {
 
@@ -3575,7 +2826,7 @@ async function PotracePlus(input, {
      * get pathData (and stringified "d")
      * and svg markup
      */
-    let {pathList, polygons} = potraceGetPathList(bmp, { turnpolicy, turdsize, optcurve, alphamax, opttolerance, scaleAdjust, minSize, maxSize });
+    let { pathList, polygons } = potraceGetPathList(bmp, { turnpolicy, turdsize, optcurve, alphamax, opttolerance, scaleAdjust, minSize, maxSize, getPolygon });
 
     /**
      * get pathData (and stringified "d")
@@ -3586,17 +2837,17 @@ async function PotracePlus(input, {
     scale = 1 / scaleAdjust;
 
     // get SVG data
-    let pathDataArray= getPotracePathData(pathList, scale);
+    let pathDataArray = getPotracePathData(pathList, scale);
     let pathData = pathDataArray.flat();
 
     if (!pathData.length) {
         throw new Error("Couldn't trace image")
-
     }
 
-    let data = getSVG(pathDataArray, width, height, { addDimensions, toRelative, toShorthands, optimize, decimals });
-
+    let data = getSVG(pathDataArray, width, height, { addDimensions, toRelative, toShorthands, optimize, decimals, getPDF });
     data.scaleAdjust = scaleAdjust;
+
+    data.polygons = getPolygon ? polygons : [];
 
     // return object
     return new PotraceObj(data);
@@ -3604,11 +2855,9 @@ async function PotracePlus(input, {
 }
 
 if (typeof window !== 'undefined') {
-
     window.pathDataToD = pathDataToD;
-
     window.PotracePlus = PotracePlus;
     window.svg2Canvas = svg2Canvas;
 }
 
-export { PI$1 as PI, PotraceObj, PotracePlus, abs$1 as abs, acos$1 as acos, asin$1 as asin, atan$1 as atan, atan2$1 as atan2, ceil$1 as ceil, cos$1 as cos, exp$1 as exp, fixPathData, floor$1 as floor, hypot, log$1 as log, max$1 as max, min$1 as min, pow$1 as pow, random$1 as random, round$1 as round, sin$1 as sin, sqrt$1 as sqrt, svg2Canvas, tan$1 as tan };
+export { PI, PotraceObj, PotracePlus, abs, acos, asin, atan, atan2, ceil, cos, exp, floor, hypot, log, max, min, pow, random, round, sin, sqrt, svg2Canvas, tan };

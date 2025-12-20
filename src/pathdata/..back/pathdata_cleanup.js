@@ -1,11 +1,11 @@
 //import { quadratic2Cubic } from './convert.js';
 //import { splitSubpaths, shiftSvgStartingPoint } from './convert_segments.js';
-import { shiftSvgStartingPoint, reorderPathData } from './pathData_reorder.js';
-import { splitSubpaths, addExtemesToCommand } from './pathData_split.js';
-import { getComThresh, commandIsFlat, getPathDataVertices, getSquareDistance } from '../geometry.js';
+import { shiftSvgStartingPoint, reorderPathData } from '../pathData_reorder.js';
+import { splitSubpaths, addExtemesToCommand } from '../pathData_split.js';
+import { getComThresh, commandIsFlat, getPathDataVertices, getSquareDistance } from '../../geometry.js';
 
-import { getPolyBBox } from '../geometry_bbox.js';
-import { renderPoint } from '../visualize.js';
+import { getPolyBBox } from '../../geometry_bbox.js';
+import { renderPoint } from '../../visualize.js';
 
 
 

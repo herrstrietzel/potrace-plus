@@ -7,25 +7,30 @@
  */
 
 import { getPathDataVertices, isPointInPolygon } from "./geometry";
-import { getPathArea, getPolygonArea } from "./geometry_area";
+//import { getPathArea, getPolygonArea } from "./geometry_area";
 import { checkBBoxIntersections, getPathDataBBox } from "./geometry_bbox";
-import { cleanUpPathData, optimizeStartingPoints, pathDataToTopLeft } from "./pathdata/pathdata_cleanup";
-import { removeZeroLengthLinetos } from "./pathdata/pathdata_cleanup2";
-import { convertPathData, pathDataToRelative } from "./pathdata/pathData_convert";
+//import { cleanUpPathData, optimizeStartingPoints } from "./pathdata/pathdata_cleanup";
+import { convertPathData } from "./pathdata/pathData_convert";
+
+// optimizations
+import { pathDataToTopLeft } from "./pathdata/pathData_reorder";
+import { removeZeroLengthLinetos } from "./pathdata/pathData_remove_zerolength";
 import { pathDataRemoveColinear } from "./pathdata/pathData_remove_collinear";
-import { reorderPathData } from "./pathdata/pathData_reorder";
-import { addExtremePoints, splitSubpaths } from "./pathdata/pathData_split";
-
-import {pathDataToD} from "./pathdata/pathData_stringify";
 
 
+//import { reorderPathData } from "./pathdata/pathData_reorder";
+//import { addExtremePoints, splitSubpaths } from "./pathdata/pathData_split";
+
+import { pathDataToD } from "./pathdata/pathData_stringify";
+import { pathDataArrayToPDF, pathDataToPDF } from "./pathdata/pathData_to_pdf";
 
 export function getSVG(pathDataArray, width, height, {
     toRelative = true,
     toShorthands = true,
     decimals = 3,
     addDimensions = false,
-    optimize = false
+    optimize = true,
+    getPDF= true
 } = {}) {
 
 
@@ -60,8 +65,6 @@ export function getSVG(pathDataArray, width, height, {
      * starting point
      * remove colinear/flat segments
      */
-
-
     if (optimize) {
         for (let i = 0, l = subPathArr.length; i < l; i++) {
 
@@ -144,8 +147,6 @@ export function getSVG(pathDataArray, width, height, {
     }
 
 
-
-
     // remove empty els due to grouping
     subPathArr = subPathArr.filter(sub => sub.pathData.length)
 
@@ -193,7 +194,17 @@ export function getSVG(pathDataArray, width, height, {
     let d = pathDataToD(pathData, decimals)
     let svg = `<svg viewBox="0 0 ${width} ${height}" ${dimAtts}xmlns="http://www.w3.org/2000/svg"><path d="${d}"/></svg>`;
 
-    return { width, height, commands: pathData.length, svg, d, svgSplit, dArr, pathData, pathDataArr }
+    // generate PDF output
+    let pdf = '';
+    if(getPDF){
+        try {
+            pdf = pathDataArrayToPDF(pathDataArr, { width, height })
+        } catch {
+            console.warn('pdf generation failed');
+        }
+    }
+
+    return { width, height, commands: pathData.length, svg, d, svgSplit, dArr, pathData, pathDataArr, pdf }
 
 }
 

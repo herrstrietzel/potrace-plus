@@ -1,9 +1,9 @@
-import { getPathDataVertices, getSquareDistance } from "../geometry";
-import { getPolyBBox } from "../geometry_bbox";
-import { convertPathData, pathDataToRelative } from "./pathData_convert";
-import { pathDataRemoveColinear } from "./pathData_remove_collinear";
-import { pathDataToTopLeft2 } from "./pathData_reorder";
-import { addExtremePoints, splitSubpaths } from "./pathData_split";
+import { getPathDataVertices, getSquareDistance } from "../../geometry";
+import { getPolyBBox } from "../../geometry_bbox";
+import { convertPathData, pathDataToRelative } from "../pathData_convert";
+import { pathDataRemoveColinear } from "../pathData_remove_collinear";
+import { pathDataToTopLeft2 } from "../pathData_reorder";
+import { addExtremePoints, splitSubpaths } from "../pathData_split";
 //import { pathDataToD } from "./potrace_svg";
 //import { renderPoint } from "./visualize";
 

@@ -46,7 +46,7 @@ window.addEventListener('DOMContentLoaded', (e) => {
 
 
         let { brightness, contrast, invert, blur, split, optimize } = settings;
-        let { svg, svgSplit, d, width, height, commands, pathData } = traced
+        let { svg, svgSplit, d, width, height, commands, pathData, pdf } = traced
 
         console.log(traced);
 
@@ -78,17 +78,16 @@ window.addEventListener('DOMContentLoaded', (e) => {
         previewTraced.innerHTML = '';
         previewTraced.insertAdjacentHTML('beforeend', traced_svg)
 
+        // update PDF download 
+        btnDownload.href = traced.getPdf()
+
     }
 
 
-
     document.addEventListener('settingsChange', async (e) => {
-
         //console.log('new settings');
         updateSVG(imgPreview, settings)
-
         showMarkersInPreview(previewTraced, settings)
-
     })
 
 })
@@ -106,45 +105,14 @@ function showMarkersInPreview(target, settings = {}) {
 /**
  * PDF download
  */
+/*
 btnPDF.addEventListener('click', async (e) => {
-    let { d, svg, pathData, width, height } = traced;
-    Svg2Pdf(d, width, height)
+    let { d, svg, pathData, width, height, pdf } = traced;
+
+    //let objectURL = URL.createObjectURL(new Blob([pdf], {type:'application/pdf'}))
+    //btnDownload.href = objectURL
+
+    btnDownload.click();
+    //Svg2Pdf(d, width, height)
 })
-
-
-async function Svg2Pdf(d, width, height) {
-
-    const doc = new PDFDocument({
-        size: [width, height],
-        margins: {
-            top: 0,
-            bottom: 0,
-            left: 0,
-            right: 0
-        }
-    });
-
-    // pipe the document to a blob
-    const stream = doc.pipe(blobStream());
-
-    doc.lineWidth(0);
-    doc.path(d)
-    doc.fill()
-
-
-    // get a blob when you're done
-    doc.end();
-
-    // get objectURL for display or download
-    stream.on("finish", async function () {
-        let blob = stream.toBlob("application/pdf");
-        let objectURL = await URL.createObjectURL(blob);
-
-        // set download link
-        btnDownload.href = objectURL
-        btnDownload.click();
-        // render via pdf.js
-        //renderPDF(objectURL);
-    });
-
-}
+*/

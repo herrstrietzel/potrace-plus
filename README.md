@@ -159,6 +159,22 @@ If you need to process the pathdata in a normalized format you can also acces th
 
 
 
+### Downgrading
+In case you encounter any issues you can try to use the previous version.  
+See [all version on npm](https://www.npmjs.com/package/potrace-plus?activeTab=versions).
+
+Analogous you can switch to previous versions for cdn links like so  
+
+```
+<script src="https://cdn.jsdelivr.net/npm/potrace-plus@latest/dist/potrace-plus.min.js"></script>
+```
+to  
+
+```
+<script src="https://cdn.jsdelivr.net/npm/potrace-plus@0.1.1/dist/potrace-plus.min.js"></script>
+```
+
+
 ### Demo
 Check the [webapp](https://herrstrietzel.github.io/potrace-plus) to test different settings – or just to vectorize images.  
 

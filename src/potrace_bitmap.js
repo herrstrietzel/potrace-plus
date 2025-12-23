@@ -3,13 +3,67 @@ import { getBBox_fromCtx, getBBox_fromImageData } from "./canvas_getBBox";
 
 
 /**
+ * Bitmap constructor class
+ */
+export class Bitmap {
+    constructor(w, h, data = null, buffer = null) {
+        this.w = w;
+        this.h = h;
+        this.size = w * h;
+        this.arraybuffer = buffer ?? new ArrayBuffer(this.size);
+        //this.arraybuffer = new ArrayBuffer(this.size);
+        //this.data = new Int8Array(this.arraybuffer);
+        this.data = data ? data : new Int8Array(this.arraybuffer);
+    }
+
+    at(x, y) {
+        return (
+            x >= 0 && x < this.w &&
+            y >= 0 && y < this.h &&
+            this.data[this.w * y + x] === 1
+        );
+    }
+
+    index(i) {
+        const y = Math.floor(i / this.w);
+        return { x: i - y * this.w, y };
+    }
+
+    flip(x, y) {
+        const idx = this.w * y + x;
+        this.data[idx] ^= 1; 
+
+        /*
+        if (this.at(x, y)) {
+            this.data[this.w * y + x] = 0;
+        } else {
+            this.data[this.w * y + x] = 1;
+        }
+        */
+    }
+
+    copy() {
+        const bmp = new Bitmap(this.w, this.h);
+        bmp.data.set(this.data);
+        return bmp;
+    }
+
+    /** Rehydrate from postMessage() data */
+    static from(obj) {
+        //return new Bitmap(obj.w, obj.h, obj.arraybuffer);
+        return new Bitmap(obj.w, obj.h, obj.data, obj.arraybuffer);
+    }
+}
+
+
+/**
  * convert inputs to digestable
  * 1-bit (black and white) image data
  */
 
 export async function getBmp(input, {
     minSize = 1000,
-    maxSize = 5000,
+    maxSize = 2500,
     filter = '',
     scale = 1,
     stripWhite = true,
@@ -24,12 +78,10 @@ export async function getBmp(input, {
     blur = 0,
 
 
-
 } = {}) {
 
 
     let type = detectInputType(input);
-    //console.log('type', type, input);
 
     let settings = { minSize, maxSize, filter, scale, brightness, contrast, invert, blur, canvas }
     let canvasImgData, src;
@@ -78,6 +130,10 @@ export async function getBmp(input, {
 
     let { imgData, scaleAdjust, width, height } = canvasImgData;
 
+    let w = width;
+    let h = height;
+    //console.log('canvasImgData', imgData);
+
 
     /**
      * crop and 
@@ -102,9 +158,8 @@ export async function getBmp(input, {
 
     // create 1-bit array
     let bmp = imageDataTo1Bit(imgData, bb.x, bb.y, bb.width, bb.height)
-    //console.log('bmp', bmp);
 
-    return { bmp, scaleAdjust, width, height }
+    return { bmp, scaleAdjust, width, height, bb, w, h }
 }
 
 
@@ -117,9 +172,9 @@ export async function getBmp(input, {
  * image data
  */
 
-async function imgDataFromSrc(src = '',
+export async function imgDataFromSrc(src = '',
     { minSize = 1000,
-        maxSize = 5000,
+        maxSize = 2500,
         scale = 1,
         brightness = 1,
         contrast = 1,
@@ -140,6 +195,7 @@ async function imgDataFromSrc(src = '',
     minSize *= scale
     maxSize *= scale
 
+
     // create new canvas
     if (!canvas) {
         canvas = document.getElementById('canvasPot');
@@ -156,8 +212,6 @@ async function imgDataFromSrc(src = '',
 
     //fetch src
     let res = await fetch(src);
-    let isRaster;
-
 
     if (res.ok) {
         let blob = await res.blob();
@@ -167,7 +221,6 @@ async function imgDataFromSrc(src = '',
 
         // is raster image
         if (type !== 'image/svg+xml') {
-            isRaster = true;
             img = await createImageBitmap(blob);
             [w, h] = [img.width, img.height];
         }
@@ -187,7 +240,7 @@ async function imgDataFromSrc(src = '',
         dimMin = Math.min(w, h);
 
         // scale up or down
-        scaleAdjust = (!isRaster && (dimMin < minSize || dimMin > maxSize)) ? minSize / dimMin : 1;
+        scaleAdjust = ((dimMin < minSize || dimMin > maxSize)) ? minSize / dimMin : 1;
 
         w *= scaleAdjust
         h *= scaleAdjust
@@ -218,6 +271,9 @@ async function imgDataFromSrc(src = '',
 
     }
 
+    //console.log(imgData);
+    //console.log('!!!imgDataFromSrc', maxSize, scale, 'wh', w, h);
+
 
     // add dimensions
     let { width, height } = imgData;
@@ -230,10 +286,7 @@ async function imgDataFromSrc(src = '',
 
 
 
-
-
-
-export async function svg2Canvas(el, { minSize = 1000, maxSize = 5000, filter = '', scale = 1, canvas = null } = {}) {
+export async function svg2Canvas(el, { minSize = 1000, maxSize = 2500, filter = '', scale = 1, canvas = null } = {}) {
 
     // create canvas
     if (!canvas) canvas = document.createElement('canvas');
@@ -393,6 +446,7 @@ export function imageDataTo1Bit(imageData, dx = 0, dy = 0, w = 0, h = 0) {
 }
 
 
+/*
 export function Bitmap(w, h) {
     this.w = w;
     this.h = h;
@@ -427,3 +481,4 @@ Bitmap.prototype.copy = function () {
     }
     return bmp;
 };
+*/

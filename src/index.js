@@ -4,7 +4,7 @@ export {
 } from './constants';
 
 
-import { getBmp, svg2Canvas } from './potrace_bitmap';
+import { Bitmap, getBmp, svg2Canvas, imgDataFromSrc } from './potrace_bitmap';
 import { potraceGetPathList } from './potrace_pathlist';
 //import { getSVG } from './potrace_svg';
 
@@ -12,6 +12,7 @@ import { potraceGetPathList } from './potrace_pathlist';
 import { getSVG } from './potrace_svg';
 import { pathDataToD } from "./pathdata/pathData_stringify";
 import { getPotracePathData } from './pathdata/pathData_from_potrace_Pathlist';
+import { getExistingPath } from './url/url_helpers';
 
 export function PotraceObj(data = {}) {
     Object.assign(this, data)
@@ -42,6 +43,9 @@ PotraceObj.prototype.getD = function () {
 }
 
 
+const PotracePlusWorkerUrl = './potrace-plus.workers.js';
+
+
 export async function PotracePlus(input, {
 
     // potrace
@@ -53,7 +57,7 @@ export async function PotracePlus(input, {
 
     // size adjustments
     minSize = 1000,
-    maxSize = 5000,
+    maxSize = 2500,
     scale = 1,
 
     //filters
@@ -65,6 +69,8 @@ export async function PotracePlus(input, {
     // svg processing
     crop = true,
     optimize = true,
+    // minify pathdata d string
+    minifyD = true,
 
     addDimensions = true,
     toRelative = true,
@@ -75,9 +81,16 @@ export async function PotracePlus(input, {
     getPolygon = true,
 
     // get PDF data
-    getPDF = true
+    getPDF = true,
+
+    // use worker for larger files
+    useWorker = false
 
 } = {}) {
+
+
+    // normalize minify param
+    minifyD = parseFloat(minifyD);
 
 
     /**
@@ -90,15 +103,62 @@ export async function PotracePlus(input, {
     let bmpData = await getBmp(input, { minSize, maxSize, crop, scale, brightness, contrast, invert, blur });
 
     // get image properties
-    let { bmp, scaleAdjust, width, height } = bmpData;
+    let { bmp, scaleAdjust, width, height, bb, w, h } = bmpData;
 
+
+    /**
+     * enable/disable worker processing 
+     * if workers are supported
+     * worker files are present
+     * image is large
+     */
+    let largeImg = (w + h) / 2 > 1000;
+    if (largeImg) useWorker = true;
+
+    let workerExists = await getExistingPath(PotracePlusWorkerUrl)
+    if (!workerExists) {
+        console.warn(`Worker JS file does not exist.\nYou can download it from the github repo:\nhttps://raw.githubusercontent.com/herrstrietzel/potrace-plus/refs/heads/main/dist/potrace-plus.workers.js`);
+    }
+
+    useWorker = useWorker && typeof Worker === 'undefined' || !workerExists ? false : useWorker;
+    //console.log('useWorker',  useWorker, largeImg);
 
     /**
      * trace
      * get pathData (and stringified "d")
      * and svg markup
      */
-    let { pathList, polygons } = potraceGetPathList(bmp, { turnpolicy, turdsize, optcurve, alphamax, opttolerance, scaleAdjust, minSize, maxSize, getPolygon });
+
+    let settings = {
+        turnpolicy,
+        turdsize,
+        optcurve,
+        alphamax,
+        opttolerance,
+        scaleAdjust,
+        minSize,
+        maxSize,
+
+        width,
+        height,
+        w,
+        h,
+        bb,
+        addDimensions,
+        toRelative,
+        toShorthands,
+        optimize,
+        minifyD,
+        decimals,
+        getPolygon,
+        getPDF,
+    }
+
+    // get potrace pathlist 
+    let type = 'pathlist';
+
+    let pathListData = (!useWorker ? potraceGetPathList(bmp, settings) : await potrace_worker(type, { bmp, options: settings }));
+    let { pathList, polygons } = pathListData;
 
 
     /**
@@ -106,8 +166,45 @@ export async function PotracePlus(input, {
      * and svg markup
      */
 
-    // scale back
-    scale = 1 / scaleAdjust
+    scale = 1 / scaleAdjust // scale back resized
+
+    let svgData = {};
+    type = 'svgData';
+    let paramsSvg = {
+        pathList,
+        polygons,
+        scale,
+        scaleAdjust,
+        ...settings
+    }
+
+    svgData = !useWorker ? getSVGData(paramsSvg) : await potrace_worker(type, paramsSvg);
+
+    return new PotraceObj(svgData);
+
+}
+
+
+export function getSVGData({
+    pathList = [],
+    width = 0,
+    height = 0,
+    w = 0,
+    h = 0,
+    bb = { x: 0, y: 0, width: 0, height: 0 },
+    scale = 1,
+    scaleAdjust = 1,
+    polygons = [],
+    getPolygon = false,
+    addDimensions = true,
+    toRelative = true,
+    toShorthands = true,
+    optimize = true,
+    minifyD = 0,
+    decimals = 3,
+    getPDF = true
+} = {}) {
+
 
     // get SVG data
     let pathDataArray = getPotracePathData(pathList, scale)
@@ -117,66 +214,59 @@ export async function PotracePlus(input, {
         throw new Error("Couldn't trace image")
     }
 
+    let data = getSVG(pathDataArray, width, height, { addDimensions, toRelative, toShorthands, optimize, minifyD, decimals, getPDF });
 
-    let data = getSVG(pathDataArray, width, height, { addDimensions, toRelative, toShorthands, optimize, decimals, getPDF });
     data.scaleAdjust = scaleAdjust;
-
-
-
-    /*
-    if (getPolygon) {
-        // find top-left most and round
-        let subPolyIndices = [];
-
-        polygons.forEach((poly,p) => {
-
-            let indices = [];
-            poly.forEach((pt, i) => {
-                pt.x = +pt.x.toFixed(decimals)
-                pt.y = +pt.y.toFixed(decimals)
-                pt.index = i;
-                indices.push(pt)
-            })
-
-            // find top most
-            indices = indices.sort((a, b) => a.x - b.x || a.y - b.y);
-            let newIndex = indices[0].index;
-
-            polygons[p]= [...poly.slice(newIndex), ...poly.slice(0, newIndex)];
-
-            subPolyIndices.push({x:indices[0].x, y:indices[0].y, index:p} )
-            //console.log('newIndex', newIndex);
-        })
-
-        subPolyIndices = subPolyIndices.sort((a, b) => a.x - b.x || a.y - b.y);
-        let newIndex = subPolyIndices[0].index;
-        polygons= [...polygons.slice(newIndex), ...polygons.slice(0, newIndex)];
-
-        console.log(polygons);
-
-        let pointAtts = [];
-        polygons.forEach(poly=>{
-            //console.log(poly);
-            let pointAtt = 'M'+poly.map(pt=>{ return [pt.x, pt.y].join(' ')} ).join(' ');
-            console.log(pointAtt);
-            pointAtts.push(pointAtt);
-        })
-        //console.log(pointAtts);
-    }
-    */
-
-
+    data.bb = bb
+    data.w = w
+    data.h = h
     data.polygons = getPolygon ? polygons : [];
-
-    // return object
-    return new PotraceObj(data);
-
+    return data;
 }
 
+export function potrace_worker(type = "pathlist", data = {}) {
+
+    return new Promise((resolve, reject) => {
+
+        let worker = new Worker(
+            new URL(PotracePlusWorkerUrl, import.meta.url),
+            { type: 'module' }
+        );
+
+        // send request
+        worker.postMessage({ type, data });
+
+        worker.onmessage = (e) => {
+            let { result, error } = e.data;
+            worker.terminate();
+
+            if (error) reject(new Error(error));
+            else resolve(result);
+        };
+
+        worker.onerror = (err) => {
+            worker.terminate();
+            reject(err);
+        };
+
+
+
+    });
+}
+
+
+export { Bitmap as Bitmap }
+export { potraceGetPathList as potraceGetPathList }
+export { imgDataFromSrc as imgDataFromSrc }
+
+//export {runPotraceInWorker as runPotraceInWorker}
 export { svg2Canvas as svg2Canvas };
 
 if (typeof window !== 'undefined') {
     window.pathDataToD = pathDataToD;
     window.PotracePlus = PotracePlus;
+    window.imgDataFromSrc = imgDataFromSrc;
+    //window.runPotraceInWorker = runPotraceInWorker;
+    window.potraceGetPathList = potraceGetPathList;
     window.svg2Canvas = svg2Canvas;
 }

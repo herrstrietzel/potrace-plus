@@ -1,6 +1,7 @@
 (function (exports) {
     'use strict';
 
+    var _documentCurrentScript = typeof document !== 'undefined' ? document.currentScript : null;
     const {
         abs, acos, asin, atan, atan2, ceil, cos, exp, floor,
         log, hypot, max, min, pow, random, round, sin, sqrt, tan, PI
@@ -278,13 +279,58 @@
     }
 
     /**
+     * Bitmap constructor class
+     */
+    class Bitmap {
+        constructor(w, h, data = null, buffer = null) {
+            this.w = w;
+            this.h = h;
+            this.size = w * h;
+            this.arraybuffer = buffer ?? new ArrayBuffer(this.size);
+
+            this.data = data ? data : new Int8Array(this.arraybuffer);
+        }
+
+        at(x, y) {
+            return (
+                x >= 0 && x < this.w &&
+                y >= 0 && y < this.h &&
+                this.data[this.w * y + x] === 1
+            );
+        }
+
+        index(i) {
+            const y = floor(i / this.w);
+            return { x: i - y * this.w, y };
+        }
+
+        flip(x, y) {
+            const idx = this.w * y + x;
+            this.data[idx] ^= 1; 
+
+        }
+
+        copy() {
+            const bmp = new Bitmap(this.w, this.h);
+            bmp.data.set(this.data);
+            return bmp;
+        }
+
+        /** Rehydrate from postMessage() data */
+        static from(obj) {
+
+            return new Bitmap(obj.w, obj.h, obj.data, obj.arraybuffer);
+        }
+    }
+
+    /**
      * convert inputs to digestable
      * 1-bit (black and white) image data
      */
 
     async function getBmp(input, {
         minSize = 1000,
-        maxSize = 5000,
+        maxSize = 2500,
         filter = '',
         scale = 1,
         stripWhite = true,
@@ -345,6 +391,9 @@
 
         let { imgData, scaleAdjust, width, height } = canvasImgData;
 
+        let w = width;
+        let h = height;
+
         /**
          * crop and 
          * convert to 1-bit 
@@ -368,7 +417,7 @@
         // create 1-bit array
         let bmp = imageDataTo1Bit(imgData, bb.x, bb.y, bb.width, bb.height);
 
-        return { bmp, scaleAdjust, width, height }
+        return { bmp, scaleAdjust, width, height, bb, w, h }
     }
 
     /**
@@ -379,7 +428,7 @@
 
     async function imgDataFromSrc(src = '',
         { minSize = 1000,
-            maxSize = 5000,
+            maxSize = 2500,
             scale = 1,
             brightness = 1,
             contrast = 1,
@@ -414,7 +463,6 @@
         let ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: true });
 
         let res = await fetch(src);
-        let isRaster;
 
         if (res.ok) {
             let blob = await res.blob();
@@ -423,7 +471,6 @@
 
             // is raster image
             if (type !== 'image/svg+xml') {
-                isRaster = true;
                 img = await createImageBitmap(blob);
                 [w, h] = [img.width, img.height];
             }
@@ -443,7 +490,7 @@
             dimMin = min(w, h);
 
             // scale up or down
-            scaleAdjust = (!isRaster && (dimMin < minSize || dimMin > maxSize)) ? minSize / dimMin : 1;
+            scaleAdjust = ((dimMin < minSize || dimMin > maxSize)) ? minSize / dimMin : 1;
 
             w *= scaleAdjust;
             h *= scaleAdjust;
@@ -480,7 +527,7 @@
 
     }
 
-    async function svg2Canvas(el, { minSize = 1000, maxSize = 5000, filter = '', scale = 1, canvas = null } = {}) {
+    async function svg2Canvas(el, { minSize = 1000, maxSize = 2500, filter = '', scale = 1, canvas = null } = {}) {
 
         // create canvas
         if (!canvas) canvas = document.createElement('canvas');
@@ -625,41 +672,6 @@
         return bmp;
     }
 
-    function Bitmap(w, h) {
-        this.w = w;
-        this.h = h;
-        this.size = w * h;
-        this.arraybuffer = new ArrayBuffer(this.size);
-        this.data = new Int8Array(this.arraybuffer);
-    }
-
-    Bitmap.prototype.at = function (x, y) {
-        return (x >= 0 && x < this.w && y >= 0 && y < this.h) &&
-            this.data[this.w * y + x] === 1;
-    };
-
-    Bitmap.prototype.index = function (i) {
-        let pt = { x: 0, y: floor(i / this.w) };
-        pt.x = i - pt.y * this.w;
-        return pt;
-    };
-
-    Bitmap.prototype.flip = function (x, y) {
-        if (this.at(x, y)) {
-            this.data[this.w * y + x] = 0;
-        } else {
-            this.data[this.w * y + x] = 1;
-        }
-    };
-
-    Bitmap.prototype.copy = function () {
-        let bmp = new Bitmap(this.w, this.h), i;
-        for (i = 0; i < this.size; i++) {
-            bmp.data[i] = this.data[i];
-        }
-        return bmp;
-    };
-
     function Path() {
         this.area = 0;
         this.len = 0;
@@ -737,7 +749,6 @@
         /**
          * processing
          */
-
         let pathList = [];
         let polygons = [];
 
@@ -2388,39 +2399,95 @@
     * serialize pathData array to 
     * d attribute string 
     */
-    function pathDataToD(pathData, decimals = -1, minify = false) {
-        // implicit l command
+
+    function pathDataToD(pathData, optimize = 0) {
+
+        optimize = parseFloat(optimize);
+
+        let beautify = optimize > 1;
+        let minify = beautify || optimize ? false : true;
+
+        // Convert first "M" to "m" if followed by "l" (when minified)
         if (pathData[1].type === "l" && minify) {
             pathData[0].type = "m";
         }
-        let d = `${pathData[0].type}${pathData[0].values.join(" ")}`;
 
-        for (let i = 1; i < pathData.length; i++) {
+        let d = '';
+        let suff = beautify ? `\n` : ' ';
+
+        if (minify) {
+            d = `${pathData[0].type} ${pathData[0].values.join(" ")}`;
+        } else {
+            d = `${pathData[0].type} ${pathData[0].values.join(" ")}${suff}`;
+        }
+
+        for (let i = 1, len = pathData.length; i < len; i++) {
             let com0 = pathData[i - 1];
             let com = pathData[i];
+            let { type, values } = com;
 
-            let type = (com0.type === com.type && minify) ?
-                " " : (
+            // Minify Arc commands (A/a) – actually sucks!
+            if (minify && (type === 'A' || type === 'a')) {
+                values = [
+                    values[0], values[1], values[2],
+                    `${values[3]}${values[4]}${values[5]}`,
+                    values[6]
+                ];
+            }
+
+            // Omit type for repeated commands
+            type = (com0.type === com.type && com.type.toLowerCase() !== 'm' && minify)
+                ? " "
+                : (
                     (com0.type === "m" && com.type === "l") ||
                     (com0.type === "M" && com.type === "l") ||
                     (com0.type === "M" && com.type === "L")
-                ) && minify ?
-                    " " : com.type;
+                ) && minify
+                    ? " "
+                    : com.type;
 
-            // round
-            if (com.values.length && decimals > -1) {
-                com.values = com.values.map(val => { return +val.toFixed(decimals) });
+            // concatenate subsequent floating point values
+            if (minify) {
+
+                let valsString = '';
+                let prevWasFloat = false;
+
+                for (let v = 0, l = values.length; v < l; v++) {
+                    let val = values[v];
+                    let valStr = val.toString();
+                    let isFloat = valStr.includes('.');
+                    let isSmallFloat = isFloat && abs(val) < 1;
+
+                    // Remove leading zero from small floats *only* if the previous was also a float
+                    if (isSmallFloat && prevWasFloat) {
+                        valStr = valStr.replace(/^0\./, '.');
+                    }
+
+                    // Add space unless this is the first value OR previous was a small float
+                    if (v > 0 && !(prevWasFloat && isSmallFloat)) {
+                        valsString += ' ';
+                    }
+
+                    valsString += valStr;
+
+                    prevWasFloat = isSmallFloat;
+                }
+
+                d += `${type}${valsString}`;
+
             }
-            d += `${type}${com.values.join(" ")}`;
+            // regular non-minified output
+            else {
+                d += `${type} ${values.join(' ')}${suff}`;
+            }
         }
 
         if (minify) {
             d = d
-                .replaceAll(" 0.", " .")
-                .replaceAll(" -", "-")
-                .replaceAll("-0.", "-.")
-                .replace(/\s+([mlcsqtahvz])/gi, "$1")
-                .replaceAll("Z", "z");
+                .replace(/ 0\./g, " .") // Space before small decimals
+                .replace(/ -/g, "-")     // Remove space before negatives
+                .replace(/-0\./g, "-.")  // Remove leading zero from negative decimals
+                .replace(/Z/g, "z");     // Convert uppercase 'Z' to lowercase
         }
 
         return d;
@@ -2501,7 +2568,8 @@
         decimals = 3,
         addDimensions = false,
         optimize = true,
-        getPDF= true
+        getPDF= true,
+        minifyD = true,
     } = {}) {
 
         width = ceil(width);
@@ -2632,7 +2700,7 @@
                 if (toRelative || toShorthands || decimals != -1) {
                     pathData = convertPathData(pathData, { toRelative, toShorthands, decimals });
                 }
-                let d = pathDataToD(pathData, decimals);
+                let d = pathDataToD(pathData, minifyD);
 
                 dArr.push(d);
                 svgSplit += `<path d="${d}"/>`;
@@ -2653,7 +2721,7 @@
          */
 
         if (toRelative || toShorthands || decimals != -1) pathData = convertPathData(pathData, { toRelative, toShorthands, decimals });
-        let d = pathDataToD(pathData, decimals);
+        let d = pathDataToD(pathData, minifyD);
         let svg = `<svg viewBox="0 0 ${width} ${height}" ${dimAtts}xmlns="http://www.w3.org/2000/svg"><path d="${d}"/></svg>`;
 
         // generate PDF output
@@ -2750,6 +2818,51 @@
 
     }
 
+    async function getExistingPath(url=''){
+        if(!url) return false;
+
+        // check relative paths
+        let paths = url.split('/').filter(Boolean);
+        let isRel = paths[0]==='.';
+
+        if(isRel) url = url.slice(1);
+
+        if(paths.length===1 || isRel){
+            let scriptUrl = getCurrentScriptUrl();
+            url = `${scriptUrl}/${url}`;
+        }
+
+        let exists = false;
+        try{
+            let res = await fetch(url, { method: "HEAD" });
+            exists = res.ok ? url : false;
+        }catch{
+            console.warn('file does not exist');
+        }
+        return exists;
+    }
+
+    function getCurrentScriptUrl() {
+        try {
+            /** 2. try error API */
+            let stackLines = new Error().stack.split('\n');
+            let relevantLine = stackLines[1] || stackLines[2];
+            if (!relevantLine) return null;
+
+            // Extract URL using a more comprehensive regex
+            let urlError = relevantLine.match(/(https?:\/\/[^\s]+)/)[1]
+                .split('/')
+                .slice(0, -1)
+                .join('/');
+
+            return urlError;
+
+        } catch (e) {
+            console.warn("Could not retrieve script path", e);
+            return null;
+        }
+    }
+
     function PotraceObj(data = {}) {
         Object.assign(this, data);
     }
@@ -2776,6 +2889,8 @@
         return this.d
     };
 
+    const PotracePlusWorkerUrl = './potrace-plus.workers.js';
+
     async function PotracePlus(input, {
 
         // potrace
@@ -2787,7 +2902,7 @@
 
         // size adjustments
         minSize = 1000,
-        maxSize = 5000,
+        maxSize = 2500,
         scale = 1,
 
         brightness = 1,
@@ -2798,6 +2913,8 @@
         // svg processing
         crop = true,
         optimize = true,
+        // minify pathdata d string
+        minifyD = true,
 
         addDimensions = true,
         toRelative = true,
@@ -2808,9 +2925,15 @@
         getPolygon = true,
 
         // get PDF data
-        getPDF = true
+        getPDF = true,
+
+        // use worker for larger files
+        useWorker = false
 
     } = {}) {
+
+        // normalize minify param
+        minifyD = parseFloat(minifyD);
 
         /**
          * normalize input
@@ -2822,22 +2945,103 @@
         let bmpData = await getBmp(input, { minSize, maxSize, crop, scale, brightness, contrast, invert, blur });
 
         // get image properties
-        let { bmp, scaleAdjust, width, height } = bmpData;
+        let { bmp, scaleAdjust, width, height, bb, w, h } = bmpData;
+
+        /**
+         * enable/disable worker processing 
+         * if workers are supported
+         * worker files are present
+         * image is large
+         */
+        let largeImg = (w + h) / 2 > 1000;
+        if (largeImg) useWorker = true;
+
+        let workerExists = await getExistingPath(PotracePlusWorkerUrl);
+        if (!workerExists) {
+            console.warn(`Worker JS file does not exist.\nYou can download it from the github repo:\nhttps://raw.githubusercontent.com/herrstrietzel/potrace-plus/refs/heads/main/dist/potrace-plus.workers.js`);
+        }
+
+        useWorker = useWorker && typeof Worker === 'undefined' || !workerExists ? false : useWorker;
 
         /**
          * trace
          * get pathData (and stringified "d")
          * and svg markup
          */
-        let { pathList, polygons } = potraceGetPathList(bmp, { turnpolicy, turdsize, optcurve, alphamax, opttolerance, scaleAdjust, minSize, maxSize, getPolygon });
+
+        let settings = {
+            turnpolicy,
+            turdsize,
+            optcurve,
+            alphamax,
+            opttolerance,
+            scaleAdjust,
+            minSize,
+            maxSize,
+
+            width,
+            height,
+            w,
+            h,
+            bb,
+            addDimensions,
+            toRelative,
+            toShorthands,
+            optimize,
+            minifyD,
+            decimals,
+            getPolygon,
+            getPDF,
+        };
+
+        // get potrace pathlist 
+        let type = 'pathlist';
+
+        let pathListData = (!useWorker ? potraceGetPathList(bmp, settings) : await potrace_worker(type, { bmp, options: settings }));
+        let { pathList, polygons } = pathListData;
 
         /**
          * get pathData (and stringified "d")
          * and svg markup
          */
 
-        // scale back
-        scale = 1 / scaleAdjust;
+        scale = 1 / scaleAdjust; // scale back resized
+
+        let svgData = {};
+        type = 'svgData';
+        let paramsSvg = {
+            pathList,
+            polygons,
+            scale,
+            scaleAdjust,
+            ...settings
+        };
+
+        svgData = !useWorker ? getSVGData(paramsSvg) : await potrace_worker(type, paramsSvg);
+
+        return new PotraceObj(svgData);
+
+    }
+
+    function getSVGData({
+        pathList = [],
+        width = 0,
+        height = 0,
+        w = 0,
+        h = 0,
+        bb = { x: 0, y: 0, width: 0, height: 0 },
+        scale = 1,
+        scaleAdjust = 1,
+        polygons = [],
+        getPolygon = false,
+        addDimensions = true,
+        toRelative = true,
+        toShorthands = true,
+        optimize = true,
+        minifyD = 0,
+        decimals = 3,
+        getPDF = true
+    } = {}) {
 
         // get SVG data
         let pathDataArray = getPotracePathData(pathList, scale);
@@ -2847,22 +3051,54 @@
             throw new Error("Couldn't trace image")
         }
 
-        let data = getSVG(pathDataArray, width, height, { addDimensions, toRelative, toShorthands, optimize, decimals, getPDF });
+        let data = getSVG(pathDataArray, width, height, { addDimensions, toRelative, toShorthands, optimize, minifyD, decimals, getPDF });
+
         data.scaleAdjust = scaleAdjust;
-
+        data.bb = bb;
+        data.w = w;
+        data.h = h;
         data.polygons = getPolygon ? polygons : [];
+        return data;
+    }
 
-        // return object
-        return new PotraceObj(data);
+    function potrace_worker(type = "pathlist", data = {}) {
 
+        return new Promise((resolve, reject) => {
+
+            let worker = new Worker(
+                new URL(PotracePlusWorkerUrl, (_documentCurrentScript && _documentCurrentScript.tagName.toUpperCase() === 'SCRIPT' && _documentCurrentScript.src || new URL('potrace-plus.js', document.baseURI).href)),
+                { type: 'module' }
+            );
+
+            // send request
+            worker.postMessage({ type, data });
+
+            worker.onmessage = (e) => {
+                let { result, error } = e.data;
+                worker.terminate();
+
+                if (error) reject(new Error(error));
+                else resolve(result);
+            };
+
+            worker.onerror = (err) => {
+                worker.terminate();
+                reject(err);
+            };
+
+        });
     }
 
     if (typeof window !== 'undefined') {
         window.pathDataToD = pathDataToD;
         window.PotracePlus = PotracePlus;
+        window.imgDataFromSrc = imgDataFromSrc;
+
+        window.potraceGetPathList = potraceGetPathList;
         window.svg2Canvas = svg2Canvas;
     }
 
+    exports.Bitmap = Bitmap;
     exports.PI = PI;
     exports.PotraceObj = PotraceObj;
     exports.PotracePlus = PotracePlus;
@@ -2875,10 +3111,14 @@
     exports.cos = cos;
     exports.exp = exp;
     exports.floor = floor;
+    exports.getSVGData = getSVGData;
     exports.hypot = hypot;
+    exports.imgDataFromSrc = imgDataFromSrc;
     exports.log = log;
     exports.max = max;
     exports.min = min;
+    exports.potraceGetPathList = potraceGetPathList;
+    exports.potrace_worker = potrace_worker;
     exports.pow = pow;
     exports.random = random;
     exports.round = round;

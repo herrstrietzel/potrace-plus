@@ -30,7 +30,8 @@ export function getSVG(pathDataArray, width, height, {
     decimals = 3,
     addDimensions = false,
     optimize = true,
-    getPDF= true
+    getPDF= true,
+    minifyD = true,
 } = {}) {
 
 
@@ -169,7 +170,7 @@ export function getSVG(pathDataArray, width, height, {
             if (toRelative || toShorthands || decimals != -1) {
                 pathData = convertPathData(pathData, { toRelative, toShorthands, decimals });
             }
-            let d = pathDataToD(pathData, decimals)
+            let d = pathDataToD(pathData, minifyD)
 
             dArr.push(d)
             svgSplit += `<path d="${d}"/>`
@@ -191,7 +192,7 @@ export function getSVG(pathDataArray, width, height, {
      */
 
     if (toRelative || toShorthands || decimals != -1) pathData = convertPathData(pathData, { toRelative, toShorthands, decimals });
-    let d = pathDataToD(pathData, decimals)
+    let d = pathDataToD(pathData, minifyD)
     let svg = `<svg viewBox="0 0 ${width} ${height}" ${dimAtts}xmlns="http://www.w3.org/2000/svg"><path d="${d}"/></svg>`;
 
     // generate PDF output

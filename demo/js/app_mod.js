@@ -1,9 +1,15 @@
+ 
+import {PotracePlus, imgDataFromSrc} from '../../dist/potrace-plus.esm.js'
+
 // potrace object
 let traced = {}
+let lastFile ='';
+let lastFileSize =0;
 
 window.addEventListener('DOMContentLoaded', (e) => {
 
     const imgPreview = document.getElementById('imgPreview')
+
 
     let settings = enhanceInputsSettings;
 
@@ -23,8 +29,10 @@ window.addEventListener('DOMContentLoaded', (e) => {
 
     inputFile.addEventListener('input', async (e) => {
         let file = inputFile.files[0];
-        let { size } = file;
+        let { size, name } = file;
         let sizeKB = +(size / 1024).toFixed(1)
+
+        //console.log(size, name );
 
         if (sizeKB > 500) {
             //alert('too large ' + sizeKB + ' KB')
@@ -38,7 +46,7 @@ window.addEventListener('DOMContentLoaded', (e) => {
 
             // reduce max bmp size
             settings.minSize = 500;
-            settings.maxSize = 2000;
+            //settings.maxSize = 1500;
 
             // prefer worker to prevent UI freezing
             settings.useWorker = true;
@@ -47,8 +55,18 @@ window.addEventListener('DOMContentLoaded', (e) => {
 
         //console.log(file, sizeKB);
 
+        let sameSrc= name === lastFile && size===lastFileSize;
+        console.log('sameSrc', sameSrc, 'lastFile', lastFile, 'lastFileSize', lastFileSize);
+
         let src = await URL.createObjectURL(file);
         imgPreview.src = src;
+
+        //let imgData = await imgDataFromSrc(src, settings);
+        //console.log(imgData);
+
+
+        lastFile= name;
+        lastFileSize= size;
 
         //updateSVG(imgPreview, settings)
         //document.dispatchEvent(new Event('settingsChange'))
@@ -148,7 +166,9 @@ window.addEventListener('DOMContentLoaded', (e) => {
         clipPreview(previewWrp, settings)
     })
 
+
 })
+
 
 
 

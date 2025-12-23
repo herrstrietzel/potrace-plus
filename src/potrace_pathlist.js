@@ -1,6 +1,9 @@
 import { Curve, Path } from "./constructors";
 import { potracePathToPoly } from "./pathdata/polygon_from_potrace_Pathlist";
 
+
+  
+
 /**
  * core tracing function
  * expects a 1-bit black and white 
@@ -19,7 +22,6 @@ export function potraceGetPathList(bmp, {
     /**
      * processing
      */
-
     let pathList = [];
     let polygons = [];
 
@@ -1047,6 +1049,7 @@ export function potraceGetPathList(bmp, {
     }
     */
 
+    //pathList.reverse()
 
     return { pathList, polygons };
 

@@ -63,7 +63,7 @@ export class Bitmap {
 
 export async function getBmp(input, {
     minSize = 1000,
-    maxSize = 2500,
+    maxSize = 1500,
     filter = '',
     scale = 1,
     stripWhite = true,
@@ -174,7 +174,7 @@ export async function getBmp(input, {
 
 export async function imgDataFromSrc(src = '',
     { minSize = 1000,
-        maxSize = 2500,
+        maxSize = 1500,
         scale = 1,
         brightness = 1,
         contrast = 1,
@@ -190,6 +190,7 @@ export async function imgDataFromSrc(src = '',
 
     // scaled dimensions
     let dimMin = 0;
+    let dimMax = Infinity;
 
     // increase size limits via scale
     minSize *= scale
@@ -238,9 +239,11 @@ export async function imgDataFromSrc(src = '',
         }
 
         dimMin = Math.min(w, h);
+        dimMax = Math.max(w, h);
 
         // scale up or down
-        scaleAdjust = ((dimMin < minSize || dimMin > maxSize)) ? minSize / dimMin : 1;
+        scaleAdjust = dimMin < minSize  ? minSize / dimMin : (dimMax > maxSize ? maxSize / dimMax : 1);
+
 
         w *= scaleAdjust
         h *= scaleAdjust

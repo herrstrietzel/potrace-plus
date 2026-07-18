@@ -139,7 +139,6 @@ export function splitSubpaths(pathData) {
 
 
     let subPathIndices = pathData.map((com, i) => (com.type.toLowerCase() === 'm' ? i : -1)).filter(i => i !== -1);
-    //let subPathIndices = pathData.map((com, i) => (com.type === 'M' ? i : -1)).filter(i => i !== -1);
 
     // no compound path
     if (subPathIndices.length === 1) {

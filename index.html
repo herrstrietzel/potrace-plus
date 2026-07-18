@@ -15,14 +15,14 @@
 
 
     <!-- ui helpers -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/enhance-inputs@latest/dist/enhanceInputs.css">
-    <script src="https://cdn.jsdelivr.net/npm/enhance-inputs@latest/dist/enhanceInputs.js" defer></script>
 
     <!-- 
-        <link rel="stylesheet" href="//localhost/___git/enhance-inputs/enhance-inputs/dist/enhanceInputs.css">
-        <script src="//localhost/___git/enhance-inputs/enhance-inputs/dist/enhanceInputs.js" defer></script>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/enhance-inputs@latest/dist/enhanceInputs.css">
+        <script src="https://cdn.jsdelivr.net/npm/enhance-inputs@latest/dist/enhanceInputs.js" defer></script>
     -->
 
+    <link rel="stylesheet" href="//localhost/___git/enhance-inputs/enhance-inputs/dist/enhanceInputs.css">
+    <script src="//localhost/___git/enhance-inputs/enhance-inputs/dist/enhanceInputs.js" defer></script>
 
     <script src="demo/lib/elzoomo/elzoomo.js" defer></script>
 
@@ -36,7 +36,7 @@
     </style>
 
 
-<!-- 
+    <!-- 
     <script src="dist/potrace-plus.js" defer></script>
 -->
 
@@ -48,139 +48,154 @@
 <body class="enhance-inputs-init --scrollbar --scroll-content pdd-0 mrg-0"
     data-enhance-inputs='{"storageName":"potracePlus", "getQuery":true, "cacheToStorage":true,"icons":"all"}'>
 
+    <!-- 
+
+        <div id="spriteMap"></div>
+        <header class="header-nav pst-sticky top-0 z-ind-1000">
+            <label><input type="checkbox" name="showNav" class="showNav" data-icon="adjustments-vertical"></label>
+        </header>
+    -->
+
+
     <div class="grd-main hgh-100vh grd grd-md-3 grd-ld-5 gap-1em">
 
-        <aside class="aside aside-1 hgh-100 aside scrollbar scroll-content scroll-track pdd-1em pos-rlt">
+        <div class="sidebar-wrap scrollbar scroll-content scroll-track">
 
-            <header class="pst-sticky top-0 bg z-ind-1000">
-                <h1>Potrace-plus</h1>
-                <p class="mrg-1rem mrg-btt">A javascript port of <a href="http://potrace.sourceforge.net"
-                        rel="nofollow">Potrace</a>.<br>
-                    Based on <a href="https://github.com/kilobtye/potrace">kilobtye's JS port</a></p>
+            <aside class="aside aside-1 hgh-100 aside scrollbar scroll-content-ld scroll-track   pdd-1em pos-rlt">
 
-                <p><input type="file" class="--btn-neg" id="inputFile" name="imgFile" value="upload"
-                        data-label="Upload file" accept=".svg,.jpg,.jpeg,.png,.webp"></p>
-                <p class="--btn-neg" data-ui="reset"></p>
-            </header>
+                <header class="pst-sticky top-0 bg z-ind-1000">
+                    <h1>Potrace-plus</h1>
+                    <p class="mrg-1rem mrg-btt">A javascript port of <a href="http://potrace.sourceforge.net"
+                            rel="nofollow">Potrace</a>.<br>
+                        Based on <a href="https://github.com/kilobtye/potrace">kilobtye's JS port</a></p>
 
-            <h3>Filter</h3>
-            <p>
-                <label>Brightness</label>
-                <input type="range" id="brightness" name="brightness" value="1" min="0" max="2" step="0.1"
-                    data-type="--range-number">
-            </p>
-            <p>
-                <label>Contrast</label>
-                <input type="range" id="contrast" name="contrast" value="1" min="0" max="10" step="0.1"
-                    data-type="--range-number">
+                    <p><input type="file" class="--btn-neg" id="inputFile" name="imgFile" value="upload"
+                            data-label="Upload file" accept=".svg,.jpg,.jpeg,.png,.webp"></p>
+                    <p class="--btn-neg" data-ui="reset"></p>
+                </header>
 
-            <p>
-            <p>
-                <label>Blur</label>
-                <input type="range" id="blur" name="blur" value="0" min="0" max="10" step="0.1"
-                    data-type="--range-number">
+                <h3>Filter</h3>
+                <p>
+                    <label>Brightness</label>
+                    <input type="range" id="brightness" name="brightness" value="1" min="0" max="2" step="0.1"
+                        data-type="--range-number">
+                </p>
+                <p>
+                    <label>Contrast</label>
+                    <input type="range" id="contrast" name="contrast" value="1" min="0" max="10" step="0.1"
+                        data-type="--range-number">
+                <p>
+                <p>
+                    <label>Blur</label>
+                    <input type="range" id="blur" name="blur" value="0" min="0" max="10" step="0.1"
+                        data-type="--range-number">
 
-            <p>
-
-
-                <label><input type="checkbox" name="invert">invert</label>
-            </p>
-
-
-            </p>
+                <p>
+                    <label><input type="checkbox" name="invert">invert</label>
+                </p>
 
 
-            <h3>Potrace settings</h3>
-            <p>See <a href="https://pythonhosted.org/pypotrace/ref.html">potrace documentation</a></p>
-            <p>
-                <label class="wdt-100">turdsize <input type="number" value="1" min="0" step="0.1" name="turdsize"
-                        data-info="reduces noise"> </label>
-            </p>
-            <p>
-                <label class="wdt-100">opttolerance<input type="number" value="1" min="0" name="opttolerance" min="0"
-                        step="0.1" data-info="adds more aggressive smoothing"> </label>
-            </p>
-            <p>
-                <label class="wdt-100">alphamax<input type="number" value="1" min="0" step="0.1" name="alphamax"
-                        data-info="lower values retain more corners/straight lines"> </label>
-            </p>
-            <p></p>
-            <label class="wdt-100"><input type="checkbox" name="optcurve"
-                    data-info="optmization reduces filesize significantly by path simplification"
-                    checked>optcurve</label>
-            </p>
+                </p>
 
-            <p>
-                <label class="fnt-wgt-700">turnpolicy</label>
-                <select name="turnpolicy" id="turnpolicy">
-                    <option value="majority" selected>majority</option>
-                    <option value="minority">minority</option>
-                    <option value="black">black</option>
-                    <option value="white">white</option>
-                    <option value="left">left</option>
-                    <option value="right">right</option>
-                    <option value="random">random</option>
-                </select>
-            </p>
-            <!-- 
+
+                <h3>Potrace settings</h3>
+                <p>See <a href="https://pythonhosted.org/pypotrace/ref.html">potrace documentation</a></p>
+                <p>
+                    <label class="wdt-100">turdsize <input type="number" value="1" min="0" step="0.1" name="turdsize"
+                            data-info="reduces noise"> </label>
+                </p>
+                <p>
+                    <label class="wdt-100">opttolerance<input type="number" value="1" min="0" name="opttolerance"
+                            min="0" step="0.1" data-info="adds more aggressive smoothing"> </label>
+                </p>
+                <p>
+                    <label class="wdt-100">alphamax<input type="number" value="1" min="0" step="0.1" name="alphamax"
+                            data-info="lower values retain more corners/straight lines"> </label>
+                </p>
+                <p></p>
+                <label class="wdt-100"><input type="checkbox" name="optcurve"
+                        data-info="optmization reduces filesize significantly by path simplification"
+                        checked>optcurve</label>
+                </p>
+
+                <p>
+                    <label class="fnt-wgt-700">turnpolicy</label>
+                    <select name="turnpolicy" id="turnpolicy">
+                        <option value="majority" selected>majority</option>
+                        <option value="minority">minority</option>
+                        <option value="black">black</option>
+                        <option value="white">white</option>
+                        <option value="left">left</option>
+                        <option value="right">right</option>
+                        <option value="random">random</option>
+                    </select>
+                </p>
+
+
+                <p><label class="wdt-100">MaxSize<input type="number" name="maxSize" value="2500"
+                            data-info="Maximum side length for tracing canvas – reduce size for faster rendering and reduzed details"></label>
+                </p>
+
+                <!-- 
 -->
 
-            <h3>SVG settings</h3>
-            <p>
-                <label><input type="checkbox" name="crop" checked>crop</label>
-                <label><input type="checkbox" name="toRelative" checked>toRelative</label>
-                <label><input type="checkbox" name="toShorthands" checked>toShorthands</label>
-                <label><input type="checkbox" name="split" checked
-                        data-info="Creates multiple path elements">split</label>
-                <label> <input type="checkbox" name="optimize"
-                        data-info="optimizes starting points and removes colinear/flat segments" checked>Optimize
-                    Segments</label>
-            </p>
+                <h3>SVG settings</h3>
+                <p>
+                    <label><input type="checkbox" name="crop" checked>crop</label>
+                    <label><input type="checkbox" name="toRelative" checked>toRelative</label>
+                    <label><input type="checkbox" name="toShorthands" checked>toShorthands</label>
+                    <label><input type="checkbox" name="split" checked
+                            data-info="Creates multiple path elements">split</label>
+                    <label> <input type="checkbox" name="optimize"
+                            data-info="optimizes starting points and removes colinear/flat segments" checked>Optimize
+                        Segments</label>
+                </p>
 
-            <h3>SVG string optimization</h3>
-            <p><label><input type="radio" name="minifyD" value="0" checked>minify</label>
-                <label><input type="radio" name="minifyD" value="1">verbose</label>
-                <label><input type="radio" name="minifyD" value="2">beautify</label>
-            </p>
-            <p>
-                <label class="wdt-100">decimals <input type="number" name="decimals" min="0" value="1"
-                        data-info="reduces floating point precision: reduces filesize significantly!"></label>
-            </p>
+                <h3>SVG string optimization</h3>
+                <p><label><input type="radio" name="minifyD" value="0" checked>minify</label>
+                    <label><input type="radio" name="minifyD" value="1">verbose</label>
+                    <label><input type="radio" name="minifyD" value="2">beautify</label>
+                </p>
+                <p>
+                    <label class="wdt-100">decimals <input type="number" name="decimals" min="0" value="1"
+                            data-info="reduces floating point precision: reduces filesize significantly!"></label>
+                </p>
 
-            <p><label><input type="checkbox" name="addDimensions" data-info="adds width and height attributes to SVG"
-                        checked>addDimensions</label></p>
+                <p><label><input type="checkbox" name="addDimensions"
+                            data-info="adds width and height attributes to SVG" checked>addDimensions</label></p>
 
 
-        </aside>
+            </aside>
 
-        <aside class="aside aside-2 pdd-1em pdd-top scrollbar scroll-content scroll-track">
+            <aside class="aside aside-2 pdd-1em pdd-top scrollbar scroll-content-ld scroll-track">
 
-            <p><label><input type="checkbox" id="inpShowCommands" name="showCommands"
-                        data-info="shows SVG segments/command end points" data-ignore="true">showCommands</label>
-            <p>
+                <p><label><input type="checkbox" id="inpShowCommands" name="showCommands"
+                            data-info="shows SVG segments/command end points" data-ignore="true">showCommands</label>
+                <p>
 
-            <p>
-                <label>SVG <textarea name="svgOut" id="svgOut" data-file="potrace.svg" data-tools="size copy download">
+                <p>
+                    <label>SVG <textarea name="svgOut" id="svgOut" data-file="potrace.svg"
+                            data-tools="size copy download">
                 </textarea></label>
-            </p>
-            <p>
-                <label>SVG Path <textarea name="svgOutPath" id="svgOutPath" data-tools="size copy download">
+                </p>
+                <p>
+                    <label>SVG Path <textarea name="svgOutPath" id="svgOutPath" data-tools="size copy download">
                 </textarea></label>
-            </p>
+                </p>
 
-            <p><strong>SVG info</strong>
-            <pre id="info"></pre>
-            </p>
+                <p><strong>SVG info</strong>
+                <pre id="info"></pre>
+                </p>
 
 
-
-        </aside>
+            </aside>
+        </div>
 
 
 
         <main class="main --spn-ld-2 --spn-ld-3 scrollbar scroll-content pst-rlt">
 
-            <div class="toolbar pst-fxd btt-0 rgh-0 pdd-1em z-ind-1000">
+            <div class="toolbar pst-abs btt-0 rgh-0 pdd-1em z-ind-1000">
                 <!-- 
                     <button class="btn-download btn-neg" id="btnPDF" type="button" data-icon="arrow-down-tray">PDF</button>
                 -->
@@ -192,8 +207,11 @@
             </div>
 
 
-
             <header class="pst-sticky --pdd-1em z-ind-1000">
+
+                <label class="navToggle"><input type="checkbox" name="showNav" class="showNav" data-icon="adjustments-vertical" data-tooltip2="show settings" title="show settings"></label>
+
+
                 <a class="lnk-github" href="https://github.com/herrstrietzel/potrace-plus"
                     title="See github repository">
                     <svg viewBox="0 0 24 24" class="icn-svg">
@@ -203,10 +221,10 @@
             </header>
 
 
-            <div id="previewWrp" class="preview pdd-1em pst-rlt">
+            <div id="previewWrp" class="preview --pdd-1em pst-rlt">
 
                 <div class="wrp-loading pst-abs top-0">
-                    <p><span data-icon="spinner"></span>  Loading</p>
+                    <p><span data-icon="spinner"></span> Processing</p>
                 </div>
 
                 <div class="wrp-zoom"

@@ -13,6 +13,7 @@ import { getSVG } from './potrace_svg';
 import { pathDataToD } from "./pathdata/pathData_stringify";
 import { getPotracePathData } from './pathdata/pathData_from_potrace_Pathlist';
 import { getExistingPath } from './url/url_helpers';
+import { pathDataArrayToPDF } from './pathdata/pathData_to_pdf';
 
 export function PotraceObj(data = {}) {
     Object.assign(this, data)
@@ -21,9 +22,21 @@ export function PotraceObj(data = {}) {
 
 // get PDF Object URL
 PotraceObj.prototype.getPdf = function () {
-    const objectURL = URL.createObjectURL(new Blob([this.pdf], { type: 'application/pdf' }))
+
+    // get pathdata array
+    let { pathDataArr, width, height } = this;
+    let pdf = '';
+    try {
+        pdf = pathDataArrayToPDF(pathDataArr, { width, height })
+        this.pdf = pdf;
+    } catch {
+        console.warn('pdf generation failed');
+    }
+
+    const objectURL = pdf ? URL.createObjectURL(new Blob([pdf], { type: 'application/pdf' })) : ''
     return objectURL;
 }
+
 
 PotraceObj.prototype.getSVG = function (split = false) {
     return !split ? this.svg : this.svgSplit;
@@ -57,7 +70,7 @@ export async function PotracePlus(input, {
 
     // size adjustments
     minSize = 1000,
-    maxSize = 2500,
+    maxSize = 1500,
     scale = 1,
 
     //filters
@@ -81,7 +94,7 @@ export async function PotracePlus(input, {
     getPolygon = true,
 
     // get PDF data
-    getPDF = true,
+    //getPDF = true,
 
     // use worker for larger files
     useWorker = false
@@ -151,7 +164,6 @@ export async function PotracePlus(input, {
         minifyD,
         decimals,
         getPolygon,
-        getPDF,
     }
 
     // get potrace pathlist 
@@ -261,6 +273,7 @@ export { imgDataFromSrc as imgDataFromSrc }
 
 //export {runPotraceInWorker as runPotraceInWorker}
 export { svg2Canvas as svg2Canvas };
+export { getSVG as getSVG}
 
 if (typeof window !== 'undefined') {
     window.pathDataToD = pathDataToD;

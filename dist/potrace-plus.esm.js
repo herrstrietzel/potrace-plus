@@ -326,7 +326,7 @@ class Bitmap {
 
 async function getBmp(input, {
     minSize = 1000,
-    maxSize = 2500,
+    maxSize = 1500,
     filter = '',
     scale = 1,
     stripWhite = true,
@@ -424,7 +424,7 @@ async function getBmp(input, {
 
 async function imgDataFromSrc(src = '',
     { minSize = 1000,
-        maxSize = 2500,
+        maxSize = 1500,
         scale = 1,
         brightness = 1,
         contrast = 1,
@@ -440,6 +440,7 @@ async function imgDataFromSrc(src = '',
 
     // scaled dimensions
     let dimMin = 0;
+    let dimMax = Infinity;
 
     // increase size limits via scale
     minSize *= scale;
@@ -484,9 +485,10 @@ async function imgDataFromSrc(src = '',
         }
 
         dimMin = min(w, h);
+        dimMax = max(w, h);
 
         // scale up or down
-        scaleAdjust = ((dimMin < minSize || dimMin > maxSize)) ? minSize / dimMin : 1;
+        scaleAdjust = dimMin < minSize  ? minSize / dimMin : (dimMax > maxSize ? maxSize / dimMax : 1);
 
         w *= scaleAdjust;
         h *= scaleAdjust;
@@ -1820,6 +1822,38 @@ function getPathDataVertices(pathData, includeCpts = false) {
     return polyPoints;
 }
 
+/**
+ * calculate polygon bbox
+ */
+function getPolyBBox(vertices, decimals = -1) {
+    let xArr = vertices.map(pt => pt.x);
+    let yArr = vertices.map(pt => pt.y);
+    let left = min(...xArr);
+    let right = max(...xArr);
+    let top = min(...yArr);
+    let bottom = max(...yArr);
+    let bb = {
+        x: left,
+        left: left,
+        right: right,
+        y: top,
+        top: top,
+        bottom: bottom,
+        width: right - left,
+        height: bottom - top
+    };
+
+    // round
+
+    if (decimals > -1) {
+        for (let prop in bb) {
+            bb[prop] = +bb[prop].toFixed(decimals);
+        }
+    }
+
+    return bb;
+}
+
 function checkBBoxIntersections(bb, bb1) {
     let [x, y, width, height, right, bottom] = [
         bb.x,
@@ -2145,6 +2179,34 @@ function pathDataToShorthands(pathData, decimals = -1, test = true) {
         pathDataShorts.push(comShort);
     }
     return pathDataShorts;
+}
+
+/**
+ * split compound paths into 
+ * sub path data array
+ */
+function splitSubpaths(pathData) {
+
+    let subPathArr = [];
+
+    try {
+        let subPathIndices = pathData.map((com, i) => (com.type.toLowerCase() === 'm' ? i : -1)).filter(i => i !== -1);
+
+    } catch {
+        console.log('catch', pathData);
+    }
+
+    let subPathIndices = pathData.map((com, i) => (com.type.toLowerCase() === 'm' ? i : -1)).filter(i => i !== -1);
+
+    // no compound path
+    if (subPathIndices.length === 1) {
+        return [pathData]
+    }
+    subPathIndices.forEach((index, i) => {
+        subPathArr.push(pathData.slice(index, subPathIndices[i + 1]));
+    });
+
+    return subPathArr;
 }
 
 function pathDataToTopLeft(pathData, removeFinalLineto = false, startToTop = true) {
@@ -2564,12 +2626,21 @@ function getSVG(pathDataArray, width, height, {
     decimals = 3,
     addDimensions = false,
     optimize = true,
-    getPDF= true,
+
     minifyD = true,
+    reorder = true,
+    recode = false,
 } = {}) {
 
     width = ceil(width);
     height = ceil(height);
+
+    // clone
+    pathDataArray = JSON.parse(JSON.stringify(pathDataArray));
+
+    if(recode){
+        console.log('recode', pathDataArray);
+    }
 
     /**
      * analyze subpaths
@@ -2584,12 +2655,30 @@ function getSVG(pathDataArray, width, height, {
     for (let i = 0; i < l; i++) {
         let pathData = pathDataArray[i];
 
-        // we already know the bbox from Potrace
-        let bb = pathData[0].bb;
+        // in case pathdata was already combined
+        let subPaths = pathData.filter(com=>com.type==='M');
 
-        // include control points for better overlapping approximation
-        let poly = getPathDataVertices(pathData, includeCpts);
-        subPathArr.push({ pathData, bb, poly, includes: [] });
+        if(subPaths.length>1);
+
+        let pathDataArr = subPaths.length>1 ? splitSubpaths(pathData) : [pathData];
+
+        pathDataArr.forEach(pathData=>{
+
+            // we already know the bbox from Potrace
+            let bb = pathData[0].hasOwnProperty('bb') ? pathData[0].bb : null;
+
+    
+            // include control points for better overlapping approximation
+            let poly = getPathDataVertices(pathData, includeCpts);
+
+            
+            if(!bb){
+                bb = getPolyBBox(poly);
+            }
+    
+            subPathArr.push({ pathData, bb, poly, includes: [] });
+        });
+
     }
 
     /**
@@ -2620,66 +2709,76 @@ function getSVG(pathDataArray, width, height, {
      * check overlapping 
      * sub paths
      */
-    for (let i = 0, l = subPathArr.length; i < l; i++) {
-        let sub1 = subPathArr[i];
-        let { bb, poly } = sub1;
+    if (reorder) {
 
-        for (let j = 0; j < l; j++) {
+        for (let i = 0, l = subPathArr.length; i < l; i++) {
+            let sub1 = subPathArr[i];
+            let { bb, poly } = sub1;
 
-            let sub1 = subPathArr[j];
-            if (i === j) continue;
+            for (let j = 0; j < l; j++) {
 
-            let [bb1, poly1] = [sub1.bb, sub1.poly];
+                let sub1 = subPathArr[j];
+                if (i === j) continue;
 
-            // sloppy bbox intersection test
-            let intersects = checkBBoxIntersections(bb, bb1);
-            if (!intersects) continue;
+                let [bb1, poly1] = [sub1.bb, sub1.poly];
 
-            // test sample on-path points
-            let ptM = { x: bb1.x + bb1.width * 0.5, y: bb1.y + bb1.height * 0.5 };
-            let pt2 = poly1[0];
-            let pt3 = poly1[floor(poly1.length / 2)];
-            let pt4 = poly1[poly1.length - 1];
+                // sloppy bbox intersection test
+                let intersects = checkBBoxIntersections(bb, bb1);
+                if (!intersects) continue;
 
-            let pts = [ptM, pt2, pt3, pt4];
-            let inPoly = false;
+                // test sample on-path points
+                let ptM = { x: bb1.x + bb1.width * 0.5, y: bb1.y + bb1.height * 0.5 };
+                let pt2 = poly1[0];
+                let pt3 = poly1[floor(poly1.length / 2)];
+                let pt4 = poly1[poly1.length - 1];
 
-            for (let i = 0; i < pts.length; i++) {
-                let pt = pts[i];
-                if (isPointInPolygon(pt, poly, bb, true)) {
-                    inPoly = true;
-                    break
+                let pts = [ptM, pt2, pt3, pt4];
+                let inPoly = false;
+
+                for (let i = 0; i < pts.length; i++) {
+                    let pt = pts[i];
+                    if (isPointInPolygon(pt, poly, bb, true)) {
+                        inPoly = true;
+                        break
+                    }
+                }
+
+                if (inPoly) {
+                    subPathArr[i].includes.push(j);
                 }
             }
-
-            if (inPoly) {
-                subPathArr[i].includes.push(j);
-            }
         }
+
+        /**
+         * combine overlapping 
+         * compound paths
+         */
+        for (let i = 0, l = subPathArr.length; i < l; i++) {
+            let sub = subPathArr[i];
+            let { includes } = sub;
+
+            includes.forEach(s => {
+                let pathData = subPathArr[s].pathData;
+                if (pathData.length) {
+                    subPathArr[i].pathData.push(...pathData);
+                    subPathArr[s].pathData = [];
+                }
+            });
+        }
+
+        // remove empty els due to grouping
+        subPathArr = subPathArr.filter(sub => sub.pathData.length);
     }
-
-    /**
-     * combine overlapping 
-     * compound paths
-     */
-    for (let i = 0, l = subPathArr.length; i < l; i++) {
-        let sub = subPathArr[i];
-        let { includes } = sub;
-
-        includes.forEach(s => {
-            let pathData = subPathArr[s].pathData;
-            if (pathData.length) {
-                subPathArr[i].pathData.push(...pathData);
-                subPathArr[s].pathData = [];
-            }
-        });
-    }
-
-    // remove empty els due to grouping
-    subPathArr = subPathArr.filter(sub => sub.pathData.length);
 
     // clone sub pathdata array
-    let pathDataArr = JSON.parse(JSON.stringify(subPathArr)).map(pd => pd.pathData);
+
+    let pathDataArr = [];
+
+    JSON.parse(JSON.stringify(subPathArr)).forEach(sub=>{
+        let {pathData, bb} = sub;
+        pathData[0].bb = bb;
+        pathDataArr.push(pathData);
+    });
 
     // flat path data 
     let pathData = JSON.parse(JSON.stringify(pathDataArr)).flat();
@@ -2720,17 +2819,7 @@ function getSVG(pathDataArray, width, height, {
     let d = pathDataToD(pathData, minifyD);
     let svg = `<svg viewBox="0 0 ${width} ${height}" ${dimAtts}xmlns="http://www.w3.org/2000/svg"><path d="${d}"/></svg>`;
 
-    // generate PDF output
-    let pdf = '';
-    if(getPDF){
-        try {
-            pdf = pathDataArrayToPDF(pathDataArr, { width, height });
-        } catch {
-            console.warn('pdf generation failed');
-        }
-    }
-
-    return { width, height, commands: pathData.length, svg, d, svgSplit, dArr, pathData, pathDataArr, pdf }
+    return { width, height, commands: pathData.length, svg, d, svgSplit, dArr, pathData, pathDataArr }
 
 }
 
@@ -2865,7 +2954,18 @@ function PotraceObj(data = {}) {
 
 // get PDF Object URL
 PotraceObj.prototype.getPdf = function () {
-    const objectURL = URL.createObjectURL(new Blob([this.pdf], { type: 'application/pdf' }));
+
+    // get pathdata array
+    let { pathDataArr, width, height } = this;
+    let pdf = '';
+    try {
+        pdf = pathDataArrayToPDF(pathDataArr, { width, height });
+        this.pdf = pdf;
+    } catch {
+        console.warn('pdf generation failed');
+    }
+
+    const objectURL = pdf ? URL.createObjectURL(new Blob([pdf], { type: 'application/pdf' })) : '';
     return objectURL;
 };
 
@@ -2898,7 +2998,7 @@ async function PotracePlus(input, {
 
     // size adjustments
     minSize = 1000,
-    maxSize = 2500,
+    maxSize = 1500,
     scale = 1,
 
     brightness = 1,
@@ -2921,7 +3021,6 @@ async function PotracePlus(input, {
     getPolygon = true,
 
     // get PDF data
-    getPDF = true,
 
     // use worker for larger files
     useWorker = false
@@ -2987,7 +3086,6 @@ async function PotracePlus(input, {
         minifyD,
         decimals,
         getPolygon,
-        getPDF,
     };
 
     // get potrace pathlist 
@@ -3094,4 +3192,4 @@ if (typeof window !== 'undefined') {
     window.svg2Canvas = svg2Canvas;
 }
 
-export { Bitmap, PI, PotraceObj, PotracePlus, abs, acos, asin, atan, atan2, ceil, cos, exp, floor, getSVGData, hypot, imgDataFromSrc, log, max, min, potraceGetPathList, potrace_worker, pow, random, round, sin, sqrt, svg2Canvas, tan };
+export { Bitmap, PI, PotraceObj, PotracePlus, abs, acos, asin, atan, atan2, ceil, cos, exp, floor, getSVG, getSVGData, hypot, imgDataFromSrc, log, max, min, potraceGetPathList, potrace_worker, pow, random, round, sin, sqrt, svg2Canvas, tan };

@@ -8,7 +8,7 @@
 
 import { getPathDataVertices, isPointInPolygon } from "./geometry";
 //import { getPathArea, getPolygonArea } from "./geometry_area";
-import { checkBBoxIntersections, getPathDataBBox } from "./geometry_bbox";
+import { checkBBoxIntersections, getPathDataBBox, getPolyBBox } from "./geometry_bbox";
 //import { cleanUpPathData, optimizeStartingPoints } from "./pathdata/pathdata_cleanup";
 import { convertPathData } from "./pathdata/pathData_convert";
 
@@ -23,6 +23,7 @@ import { pathDataRemoveColinear } from "./pathdata/pathData_remove_collinear";
 
 import { pathDataToD } from "./pathdata/pathData_stringify";
 import { pathDataArrayToPDF, pathDataToPDF } from "./pathdata/pathData_to_pdf";
+import { splitSubpaths } from "./pathdata/pathData_split";
 
 export function getSVG(pathDataArray, width, height, {
     toRelative = true,
@@ -30,13 +31,23 @@ export function getSVG(pathDataArray, width, height, {
     decimals = 3,
     addDimensions = false,
     optimize = true,
-    getPDF= true,
+    //getPDF= true,
     minifyD = true,
+    reorder = true,
+    recode = false,
 } = {}) {
 
 
     width = Math.ceil(width);
     height = Math.ceil(height);
+
+    // clone
+    pathDataArray = JSON.parse(JSON.stringify(pathDataArray));
+
+    if(recode){
+        console.log('recode', pathDataArray);
+    }
+
 
     /**
      * analyze subpaths
@@ -47,16 +58,40 @@ export function getSVG(pathDataArray, width, height, {
     let subPathArr = []
     let l = pathDataArray.length;
     let includeCpts = true;
+    let isProcessed = false
 
     for (let i = 0; i < l; i++) {
         let pathData = pathDataArray[i]
 
-        // we already know the bbox from Potrace
-        let bb = pathData[0].bb;
+        // in case pathdata was already combined
+        let subPaths = pathData.filter(com=>com.type==='M');
 
-        // include control points for better overlapping approximation
-        let poly = getPathDataVertices(pathData, includeCpts)
-        subPathArr.push({ pathData, bb, poly, includes: [] })
+        if(subPaths.length>1){
+            isProcessed = true
+        }
+
+
+        let pathDataArr = subPaths.length>1 ? splitSubpaths(pathData) : [pathData];
+        //let pathDataArr = subPaths.length>1 ? [pathData] : [pathData];
+        //console.log(pathDataArr);
+
+        pathDataArr.forEach(pathData=>{
+
+            // we already know the bbox from Potrace
+            let bb = pathData[0].hasOwnProperty('bb') ? pathData[0].bb : null;
+
+    
+            // include control points for better overlapping approximation
+            let poly = getPathDataVertices(pathData, includeCpts)
+
+            
+            if(!bb){
+                bb = getPolyBBox(poly)
+            }
+    
+            subPathArr.push({ pathData, bb, poly, includes: [] })
+        })
+
     }
 
 
@@ -90,69 +125,83 @@ export function getSVG(pathDataArray, width, height, {
      * check overlapping 
      * sub paths
      */
-    for (let i = 0, l = subPathArr.length; i < l; i++) {
-        let sub1 = subPathArr[i];
-        let { bb, poly } = sub1;
+    if (reorder) {
 
-        for (let j = 0; j < l; j++) {
+        for (let i = 0, l = subPathArr.length; i < l; i++) {
+            let sub1 = subPathArr[i];
+            let { bb, poly } = sub1;
 
-            let sub1 = subPathArr[j];
-            if (i === j) continue;
+            for (let j = 0; j < l; j++) {
 
-            let [bb1, poly1] = [sub1.bb, sub1.poly];
+                let sub1 = subPathArr[j];
+                if (i === j) continue;
 
-            // sloppy bbox intersection test
-            let intersects = checkBBoxIntersections(bb, bb1);
-            if (!intersects) continue;
+                let [bb1, poly1] = [sub1.bb, sub1.poly];
 
-            // test sample on-path points
-            let ptM = { x: bb1.x + bb1.width * 0.5, y: bb1.y + bb1.height * 0.5 }
-            let pt2 = poly1[0]
-            let pt3 = poly1[Math.floor(poly1.length / 2)];
-            let pt4 = poly1[poly1.length - 1];
+                // sloppy bbox intersection test
+                let intersects = checkBBoxIntersections(bb, bb1);
+                if (!intersects) continue;
 
-            let pts = [ptM, pt2, pt3, pt4];
-            let inPoly = false;
+                // test sample on-path points
+                let ptM = { x: bb1.x + bb1.width * 0.5, y: bb1.y + bb1.height * 0.5 }
+                let pt2 = poly1[0]
+                let pt3 = poly1[Math.floor(poly1.length / 2)];
+                let pt4 = poly1[poly1.length - 1];
 
-            for (let i = 0; i < pts.length; i++) {
-                let pt = pts[i];
-                if (isPointInPolygon(pt, poly, bb, true)) {
-                    inPoly = true;
-                    break
+                let pts = [ptM, pt2, pt3, pt4];
+                let inPoly = false;
+
+                for (let i = 0; i < pts.length; i++) {
+                    let pt = pts[i];
+                    if (isPointInPolygon(pt, poly, bb, true)) {
+                        inPoly = true;
+                        break
+                    }
+                }
+
+                //inPoly
+                if (inPoly) {
+                    subPathArr[i].includes.push(j)
                 }
             }
-
-            //inPoly
-            if (inPoly) {
-                subPathArr[i].includes.push(j)
-            }
         }
+
+
+        /**
+         * combine overlapping 
+         * compound paths
+         */
+        for (let i = 0, l = subPathArr.length; i < l; i++) {
+            let sub = subPathArr[i];
+            let { includes } = sub;
+
+            includes.forEach(s => {
+                let pathData = subPathArr[s].pathData;
+                if (pathData.length) {
+                    subPathArr[i].pathData.push(...pathData)
+                    subPathArr[s].pathData = []
+                }
+            })
+        }
+
+
+        // remove empty els due to grouping
+        subPathArr = subPathArr.filter(sub => sub.pathData.length)
     }
-
-
-    /**
-     * combine overlapping 
-     * compound paths
-     */
-    for (let i = 0, l = subPathArr.length; i < l; i++) {
-        let sub = subPathArr[i];
-        let { includes } = sub;
-
-        includes.forEach(s => {
-            let pathData = subPathArr[s].pathData;
-            if (pathData.length) {
-                subPathArr[i].pathData.push(...pathData)
-                subPathArr[s].pathData = []
-            }
-        })
-    }
-
-
-    // remove empty els due to grouping
-    subPathArr = subPathArr.filter(sub => sub.pathData.length)
 
     // clone sub pathdata array
-    let pathDataArr = JSON.parse(JSON.stringify(subPathArr)).map(pd => pd.pathData);
+    //let pathDataArr = JSON.parse(JSON.stringify(subPathArr))
+    //let pathDataArr = JSON.parse(JSON.stringify(subPathArr)).map(pd => pd.pathData);
+
+    let pathDataArr = []
+
+    JSON.parse(JSON.stringify(subPathArr)).forEach(sub=>{
+        let {pathData, bb} = sub
+        pathData[0].bb = bb
+        pathDataArr.push(pathData)
+    })
+
+    //console.log('pathDataArr after', pathDataArr);
 
     // flat path data 
     let pathData = JSON.parse(JSON.stringify(pathDataArr)).flat();
@@ -195,17 +244,9 @@ export function getSVG(pathDataArray, width, height, {
     let d = pathDataToD(pathData, minifyD)
     let svg = `<svg viewBox="0 0 ${width} ${height}" ${dimAtts}xmlns="http://www.w3.org/2000/svg"><path d="${d}"/></svg>`;
 
-    // generate PDF output
-    let pdf = '';
-    if(getPDF){
-        try {
-            pdf = pathDataArrayToPDF(pathDataArr, { width, height })
-        } catch {
-            console.warn('pdf generation failed');
-        }
-    }
+    //console.log(d);
 
-    return { width, height, commands: pathData.length, svg, d, svgSplit, dArr, pathData, pathDataArr, pdf }
+    return { width, height, commands: pathData.length, svg, d, svgSplit, dArr, pathData, pathDataArr }
 
 }
 

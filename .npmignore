@@ -1,6 +1,7 @@
 __backup
 __log
 __todo
+__logo
 __testfiles
 demo/
 rollup.config.js

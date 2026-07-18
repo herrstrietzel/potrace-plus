@@ -1,0 +1,22 @@
+{
+    "theme_color": "#000",
+    "background_color": "#fff",
+    "icons": [
+        {
+            "purpose": "any",
+            "sizes": "any",
+            "type": "image/svg+xml",          
+            "src": "appicon.svg"
+        }
+    ],
+    "orientation": "any",
+    "display": "fullscreen",
+    "dir": "auto",
+    "lang": "en",
+    "name": "potrace-plus",
+    "short_name": "potrace+",
+    "start_url": "./",
+    "scope": "./"
+  }
+
+  
